@@ -1,0 +1,263 @@
+# Guild of Merchants — 再考ロードマップ v2
+
+> Godot 4.3 / GDScript
+> 本ドキュメントは“唯一の最新版”として運用。更新はここに集約。
+
+---
+
+## 0) ゴールと指針（短く）
+
+* **まずは遊べる縦スライス**：買う→移動→売る→（たまに）イベントが起きる→判断が少し楽しい。
+* **UIはHUD主導**：サブ画面（Trade/Map/Menu/Inv）は HUD から開閉、ESCで閉じる。開いている間は**自動ポーズ**。
+* **データはCSV継続＋JSONセーブ**：パラメータは CSV/Export で可視化、セーブはJSONで最低限。
+* **調整のしやすさ**：価格・供給・イベントをランタイムで弄れる“チューニング面”を確保。
+
+---
+
+## 1) マイルストーン（Now / Next / Later）
+
+### Now（M0: 安定化&見える化）
+
+* [x] Pause/Play の一貫性：HUDの `_sync_pause_state()` を基準に**全ポップアップ/ダイアログ**で停止。（`game_hud.gd` 実装済：AcceptDialog検出＋トーストも連動）
+* [x] ESC挙動の統一：最前面→Trade は **Hubに戻ってから閉じる** → それ以外を順に閉じる。（`game_hud.gd` の ESC ハンドラで統一）
+* [ ] 価格・在庫の**デバッグパネル最小**：mid/spread/shortage（EMA）を1都市×1品で見られる。（未）
+* [x] 利益プレビューの信頼性：税/旅費/通行料込みの `net` をMarketで確認（Top3表示の体裁仕上げ）。（`trade_window.gd` Top3/日数/都市名 表示）
+
+### Next（M1: 取引ハブ完成 / 委託 & 定期市の最低動線）
+
+* [x] **TradeHub 完了**：毎度Hubから開始（Market/Consign/Fair）。（`trade_window.gd` v0 完了）
+* [x] Consignment（委託）最小：所持→数量→日数→委託。**日次販売ログ**とキャッシュ反映。（`world.gd` `enable_stalls`/`_process_auto_sales` 実装）
+* [x] Fair（定期市）最小：開催判定→参加料→期間中の売れ行きブースト（委託販売に乗る）。（`calendar_events.csv` / `world.gd` `join_fair` / `trade_window.gd`）
+* [x] Inventory ウィンドウ（所持一覧）をHUDから開閉、売値は都市Bidで表示。（`inventory_window.gd` 追加）
+
+### Later（M2: 供給イベントの“観測可能化” / 保存 / 地図UX）
+
+* [ ] 供給イベントの**頻度可視化**：当日件数・月累計・都市/品目別の簡易表示。
+* [ ] チューニングUI：`p_base / cooldown / daily_cap / multipliers` を runtime で調整。
+* [ ] セーブ/ロード v0：Worldの必須状態を JSON1 ファイルに。
+* [ ] Map UX：ズーム/パン、NPC凡例、ピック移動の説明テキスト。
+
+---
+
+## 2) スプリント計画（4+1スプリント / 1～2週間粒度想定）
+
+> 規模は S=～0.5d / M=1–2d / L=3–4d 目安。後ろほどラフ。
+
+### Sprint A（安定化 & 判断支援）
+
+**目的**: UIポーズ/ESCの一貫化＋利益プレビューの完成度。
+
+* [M] HUD: `_any_popup_visible()` と AcceptDialog 検出の堅牢化（多重ポップアップ対策）。
+* [S] TradeWindow: Top3利益プレビューの体裁（都市名、/日、日数、正負着色）。
+* [S] MenuPanel 情報行の整備（Day/City/Cash/Cap を常時更新）。
+* [M] デバッグ: 価格/不足EMA/スプレッドを1枚で見られる簡易Widget。
+* **受け入れ基準**
+
+  * ESCで**全て閉じる**（Map/Inv/Trade/Menu 順）／TradeはHubに戻って閉じる。
+  * Marketの利益プレビューは**ゼロ/負の表示**が破綻しない（四捨五入/桁）。
+
+### Sprint B（取引ハブ / 委託 / 定期市）
+
+**目的**: Hub→Market/Consign/Fair の導線と、委託/定期市のミニマムを**遊べる品質**に。
+
+* [M] TradeHub: 再オープンで常にHubから開始。ボタン活性の更新（Fair開催日はON）。
+* [M] Consignment: 登録/日次処理/税・手数料・日額の清算、HUDログ出力（`StallSold`）。
+* [S] Consignment UI: 概算（売値×数量−税−手数料−日額）表示。
+* [M] Fair: 参加ボタン→参加料徴収→期間中ブーストを委託販売に乗せる。終了時に解除。
+* **受け入れ基準**
+
+  * 委託在庫が0 or 期間切れで**自動的にリストから消える**。
+  * Fair当日に参加→**販売ログの売れ行きが増える**ことが体感できる。
+
+### Sprint C（供給イベントの見える化 / セーブ）
+
+**目的**: ランダム供給のチューニングを“目で回せる”。
+
+* [M] HUD or Debug: 当日供給件数と月次カウントの表示（小さなパネル）。
+* [M] **Tuning面**: `p_base / cooldown / daily_cap / boosts` をスライダで変更→即反映。
+* [M] Save/Load v0: `day/cities/stock/price/history/player/traders/stalls/fairs/_ema/effects` をJSONへ保存/復元。
+* **受け入れ基準**
+
+  * 既存CSVと矛盾しない（ロード後も価格更新が自然）。
+  * 供給パラメータ変更が**当日以降**のログ・価格に反映。
+
+### Sprint D（イベントダイスの骨格 / Map UX）
+
+**目的**: “日時イベントダイス / 道中イベントダイス”を最小遊べる形で導入し、世界に抑揚をつける。
+
+> **進捗**: 骨格は導入済み（`world.gd` `_roll_daily_event()` / `_roll_travel_event_for_player()`、CSV読込、危険度/護衛補正、デバッグログ）。効果レイヤと可視化の仕上げ・Save/Load 対応は継続。
+
+* [M] **日時イベントダイス**（Day Start）
+
+  * テーブル定義（`id, weight, kind, effect, duration, cooldown, flavor`）。
+  * 種別例：`econ`（価格係数±）, `tax`（税率±）, `rumor`（供給フラグ±）, `weather`（旅費±）。
+  * ロールは**1日1回**・重み付き。発火後は `cooldown` と重複抑制（同系同時1件）。
+  * 効果は World の軽量レイヤ `world.effects[]` で管理（開始日・残日数・対象・倍率）。
+  * Save/Load：`effects` を JSON に永続化。
+* [M] **道中イベントダイス**（Travel 中のみ）
+
+  * 1移動につき**日数ごとに判定**（例：1日ごと p=0.25）。
+  * 例：`追い風`（所要日数-1, 最低1）, `関所取締`（通行料+α もしくは一時停止）, `盗賊`（所持品少量減）, `商隊合流`（次の都市で価格ボーナス）。
+  * UI：移動中のフローティングトースト＋到着後の結果ダイアログ（要点のみ）。
+  * Save/Load：移動中フラグと残り日数、進行中イベントを保存。
+* [S] Map: ズーム/パン、現在地と隣接のピン強調の微調整、凡例。
+* **受け入れ基準**
+
+  * 日時/道中いずれも**効果の残期間**がカウントダウンし、満了で元に戻る。
+  * セーブ→ロードで効果・残日数が維持される。
+  * ログ/トースト/ダイアログのいずれかで**何が起きたか**が常に分かる。
+
+### Sprint E（ストーリー／紙芝居 v1）
+
+**目的**: 低コストで“語れる”導線を追加。ゲームループと緩く連動。
+
+* [M] **シーン実行器**：`StoryRunner`（JSON/CSVのシナリオを解釈）
+
+  * コマンド設計：`bg, char, pos, say, name, choice, jump, flag, wait, sfx, cg`（必須のみ）。
+  * フラグは `world.flags` に集約（ストーリー/イベント双方から参照可能）。
+* [M] **UI最小**：メッセージウィンドウ（名前/本文/オート/スキップ/履歴）、立ち絵2枚・背景1枚の差し替え。
+* [S] **トリガ**：`DayStart`・`都市到着`・`初回起動` から呼び出し可。連続起動の抑制フラグ。
+* [S] **プロローグ実装**：2–3分の「出立」シーン（最後に分岐1つ）。分岐は `world.flags` を1つ設定。
+* [S] Save/Load：進行中シーンID・行番号・フラグを保存。
+* **受け入れ基準**
+
+  * ESCで中断→後で再開しても同じ箇所から継続。
+  * 選択肢が少なくとも1つゲーム側に影響（例：初期評判＋1 or 旅費-5%/3日）。
+
+## 3) 実装メモ（ファイル別の主な改修点）
+
+* `scripts/game_hud.gd`
+
+  * ポーズ統合とESC閉じ順、トースト/ダイアログ表示の制御（Play表示の同期）。
+  * Mapピック移動→確認ダイアログ→`player_move()` の導線を標準に。
+* `ui/trade_window.gd`
+
+  * Hub→Market/Consign/Fairのページナビ。Marketの利益プレビューとMaxロジック。
+  * Consign/Fair の情報欄・ボタン・結果ダイアログ。
+* `ui/menu_panel.gd`
+
+  * Day/City/Cash/Cap の定期更新。ボタンはHUDに委譲。
+* `scripts/world.gd`
+
+  * 供給イベント（済）と**統計の公開**（日次/都市/品目）。
+  * 委託・定期市の**日次処理**（済）とセーブ対象の洗い出し。
+  * **効果レイヤ**：`effects[]`（id, target, mult/offset, started, remain, source）。
+  * **フラグ**：`flags{}`（ストーリー/イベント判定用）。
+* `scripts/map_layer.gd`
+
+  * ピックモードのハイライト、ズーム/パン、凡例描画。
+* `story/StoryRunner.gd`（新規）
+
+  * JSON/CSV を読み込み、キュー化・コマンド実行、ESC中断/再開。
+* `ui/story_panel.tscn/gd`（新規）
+
+  * メッセージウィンドウ、名前欄、オート/スキップ、履歴。
+* `data/story/*.json`（新規）
+
+  * プロローグ、チュートリアル、分岐例を格納。
+* `data/events/*.csv`（新規）
+
+  * 日時イベントダイス表、道中イベントダイス表。
+
+---
+
+## 4) Definition of Done（各スプリント共通）
+
+* 主要操作（Play/Pause/Trade/Map/Menu/Inv/ESC）が**想定どおり停止/再開**する。
+* 新規UIは**既存と同じアンカー/サイズ方針**（フルレクト or 指定サイズ）。
+* 例外時はユーザに理由表示（資金不足/非隣接/到着日）＋終了キーが効く。
+* 設定は `@export` で可視化し、デフォルト値に戻せる。
+* **イベントダイス**：重複抑制・残日数・セーブ/ロードの一貫性がある。
+* **ストーリー**：中断/再開OK・フラグ反映が確認できる。
+* クラッシュ/エラーをデバッガに残さない（Godotの赤エラー0件）。
+
+---
+
+## 5) バランス・チューニング方針
+
+* 初心者向けに `spread_base↑`・`travel_cost↓` から開始→スプリントごとに段階調整。
+* 供給ルールは **A案=穏** をデフォルト、**B案=スパイシー**はテスト用プリセット。
+* 大量売買インパクト：将来、`shortage` EMAへ一時加算して収束させる（バックログ）。
+* **日時イベント**：デフォルト 1日1件・平均持続2–3日・同系クールダウン3–5日。
+* **道中イベント**：デフォルト p=0.25/日、被害は最大でも所持スタックの10%以内、メリット系も同等の幅で。
+* **ストーリー**：1シーン2–3分、テキスト表示速度はオプション、選択は1–2回/シーン以内。
+
+---
+
+## 6) QA チェックリスト（ビルド時）
+
+* [ ] 起動直後は Pause、Playボタン表記が正しい。
+* [ ] 取引→Map→Inv→Menu→ESC の往復で**フォーカス喪失が無い**。
+* [ ] MarketのTop3プレビューが**必ず3件以内**で整形される（都市名/符号/桁）。
+* [ ] 委託/定期市のログがHUDに現れ、所持金が一致。
+* [ ] 供給イベントが0件の日/多い日の双方で**ハングしない**。
+* [ ] **日時イベント／道中イベント**の効果発生・残期間・終了が可視化される。
+* [ ] **ストーリー**：プロローグを最後まで通せ、再開可能。選択がゲーム側に反映。
+* [ ] セーブ→終了→ロードで価格/在庫/イベント状態・効果・ストーリー位置が復元。
+
+---
+
+## 7) リスクと緩和
+
+* **ポーズ地獄**：複数ポップアップ混在で進行不能 → HUDで単一の真実源に集約（本書の方針）。
+* **イベント過多/過疎**：体感が壊れる → `daily_cap`と`cooldown/ramp`＋デバッグ統計で制御。
+* **価格暴走**：極端な在庫で `mult` が張り付く → `min/max` の確認、プレビューは正負問わず表示。
+* **セーブの将来互換**：JSONバージョン番号を持ち、欠損は既定値で復元。
+
+---
+
+## 8) バックログ（Later候補）
+
+* 契約（Contract）：◯日以内に×個の納品で報酬。TradeHubにタブ追加。
+* ウォッチリスト/アラート：閾値超の利幅で点灯。
+* 噂（Rumor）：`price_mult(city,pid,ratio,duration)` をHUD1行で。
+* 借金/保険/護衛：序盤の救済・移動リスクの軽減。
+* 価格ヒストリのスパークライン（10日）をMarketに。
+* **UIアセット/スキン**：既存UIをAsset Packで刷新（フォント/ボタン/パネル）。Story/UIと同時に段階導入。
+
+---
+
+## 9) 運用ルール
+
+* インデントは **Spaces / 4**。PRは**最小差分**（+/- 1行単位）と**完成ファイル**を添付。
+* 本ロードマップに沿って**チケット化**（Issueタイトル＝セクション名＋項目）→順次クローズ。
+
+---
+
+## 10) 本日の更新（自動追記）
+
+* Now:M0 の **Pause/Play一貫性／ESC統一／利益プレビュー** を完了。
+* Next:M1 の **TradeHub／委託／定期市／Inventory** を v0 で実装。
+* **イベントダイス**：日次/道中の骨格＋CSV読込＋ログ＋危険度/護衛補正を投入。
+* **ID→名称の人間化**：`world.humanize_ids()` を追加。HUDダイアログ/トーストに適用。
+
+### 次の作業（提案 / 優先順）
+
+1. **デバッグパネル最小（残タスク）**：都市×商品を選択し、`mid / spread / shortage(EMA)` を表示する小パネル（HUD内 or 別Pop）。
+2. **イベント効果の可視化**：HUDに直近N件のイベントログ欄（既存 `event_log[]` を表示）。期間中はピンや色で簡易表示。
+3. **Travel リスク調整**：`route_hazard_map` と `player.escort_level` の初期値・UIを整え、体感の良/悪比を調整。
+4. **CSVテーブル整備**：`events_daily.csv / events_travel.csv` の重み・フレーバーを暫定確定（3–5件/種）。
+5. **Save/Load v0 素振り**：Worldの最小状態をJSON保存して復元（effects/stalls/fairs/ema含む）。
+
+## 11) 引き継ぎメモ（新規チャット用）
+
+* **ビルド環境**: Godot 4.3。インデントは *Spaces / 4* 推奨（Editor > Editor Settings > Text Editor > Indent > Type: Spaces）。
+* **現状の主な完成点**:
+
+  * HUD: Play/Pause一体化、ESC閉じ順の統一、トースト/ダイアログ表示中の**自動ポーズ**。
+  * Debug: TopBarに **Debug** ボタン追加、**F3** でトグル可。DebugPanel は専用 **DebugWindow**（サブウィンドウ）としてポップアップ化し、`world` 参照を受け取り **mid / spread / shortage(EMA)** を表示（初期は非表示）。
+  * TradeHub: **Market / Consign / Fair** のハブ導線。Consign(委託) と Fair(定期市) は v0 実装（手数料/税/日額/参加料/ブーストを日次処理に反映）。
+  * Map/Move: **MapWindow** 上で都市ピック → 確認ダイアログ → `player_move()`（旅費/通行料表示・資金チェック）。
+  * Inventory: 所持一覧ウィンドウ v0（HUDから開閉）。
+  * 供給イベント: ルールA実装、**クールダウン/日に上限/季節補正**、月別・季節係数、当日/累計カウント（ログ）。
+  * イベントダイス: **日時/道中**の骨格、危険度/護衛で**良/悪の重み補正**。`log_event_dice`/`log_event_dice_verbose` でロールログ切替。**ID→名称の人間化**を HUD ダイアログ/トーストに適用。
+* **データ（CSV）**: `products.csv` / `cities.csv` / `routes.csv` / `city_stock.csv` / `events_daily.csv` / `events_travel.csv` / `calendar_events.csv`（任意）。ディレクトリは `res://data/`。
+* **キーマップ**: `ui_cancel`=Esc、`toggle_debug`=F3（起動時に自動保証）。
+* **主要スクリプト**: `scripts/world.gd`（唯一の正本）, `scripts/game_hud.gd`, `ui/trade_window.gd`, `ui/menu_panel.gd`, `scripts/map_layer.gd`, `ui/inventory_window.gd`, `ui/debug_panel.gd`, `scripts/csv_loader.gd`。
+* **既知の残課題**（ロードマップ反映済）: デバッグパネルの値更新の微修正、イベント効果の可視化、Travel リスクUI、CSVテーブルの重み/フレーバー整備、Save/Load v0。
+
+**次チャット開始時の推奨アクション**
+
+1. `World` ノードの Export をざっと確認（`log_event_dice`, `supply_debug_boost_enable` など）。
+2. Debugボタン or F3 で DebugWindow を開き、都市/商品を選択して値更新を確認。
+3. `events_daily.csv` / `events_travel.csv` の **weight** を調整して体感をチェック。

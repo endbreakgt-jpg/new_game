@@ -1,0 +1,6 @@
+id,weight,kind,target_city,target_pid,value,duration,flavor_ja
+NONE,60,none,*,*,0,0,今日は特に何も起こらなかった。
+D_TAX_CUT,10,tax_offset,*,*, -0.01,3,当局の減税措置で売上税が一時的に下がった（3日間）。
+D_TAX_HIKE,8,tax_offset,*,*, 0.02,2,臨時増税が発表され売上税が上がった（2日間）。
+D_PRICE_FEST,12,price_mult,RE0003,*, 1.15,3,定期市の盛り上がりでRE0003の相場が上振れ（3日間）。
+D_PRICE_GLUT,10,price_mult,*,PR02, 0.85,2,各地でPR02がだぶつき相場が下振れ（2日間）。

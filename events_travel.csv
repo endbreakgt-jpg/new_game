@@ -1,0 +1,5 @@
+id,weight,kind,value,flavor_ja
+NONE,75,none,0,道中は平穏そのものだった。
+T_TAILWIND,10,days_delta,-1,追い風に乗り予定より早く進めた（到着日が1日前倒し）。
+T_HEADWIND,6,days_delta,1,向かい風に遭い足止めを食らった（到着日が1日遅延）。
+T_BANDITS,6,cargo_loss_pct,0.10,盗賊に襲われ積荷の一部を失った（10%）。
