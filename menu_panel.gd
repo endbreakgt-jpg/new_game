@@ -14,6 +14,8 @@ var trade_btn: Button
 var map_btn: Button
 var step_btn: Button
 var move_btn: Button
+var save_btn: Button
+var save_menu: PanelContainer
 var inv_btn: Button
 var info_day: Label
 var info_city: Label
@@ -26,10 +28,11 @@ var _drag_start := Vector2.ZERO
 var _panel_start := Vector2.ZERO
 
 func _ready() -> void:
-    # World 取得
+    # World 取得の試み
     if world_path != NodePath(""):
         world = get_node_or_null(world_path) as World
     if world == null:
+        # 見つからない場合は、ツリー全体を検索
         world = get_tree().root.find_child("World", true, false) as World
 
     _ensure_ui()
@@ -37,12 +40,15 @@ func _ready() -> void:
     call_deferred("_late_wire")
 
 func _late_wire() -> void:
+    # Worldのシグナル接続は遅延実行
     if world and not world.world_updated.is_connected(Callable(self, "_rebuild")):
         world.world_updated.connect(_rebuild)
     _rebuild()
 
 # --- UI 構築 ---
+
 func _ensure_ui() -> void:
+    # 1. Back Panel
     panel = get_node_or_null("Back") as PanelContainer
     if panel == null:
         panel = PanelContainer.new()
@@ -68,83 +74,96 @@ func _ensure_ui() -> void:
         sb.border_width_bottom = 2
         panel.add_theme_stylebox_override("panel", sb)
 
-    # ルート VBox（タイトルバー + コンテンツ）
+    # 2. Frame (ルート VBox: タイトルバー + コンテンツ)
     var frame := panel.get_node_or_null("Frame") as VBoxContainer
     if frame == null:
         frame = VBoxContainer.new()
         frame.name = "Frame"
         panel.add_child(frame)
+    
+    _build_title_bar(frame)
+    _build_content_area(frame)
 
-    # タイトルバー
-    title_bar = frame.get_node_or_null("TitleBar") as HBoxContainer
+    call_deferred("_ensure_save_ui")
+
+func _build_title_bar(parent: VBoxContainer) -> void:
+    # タイトルバー (HBoxContainer)
+    title_bar = parent.get_node_or_null("TitleBar") as HBoxContainer
     if title_bar == null:
         title_bar = HBoxContainer.new()
         title_bar.name = "TitleBar"
         title_bar.mouse_filter = Control.MOUSE_FILTER_PASS
-        frame.add_child(title_bar)
+        parent.add_child(title_bar)
 
         var title := Label.new()
         title.text = "Menu"
         title.add_theme_font_size_override("font_size", 16)
         title_bar.add_child(title)
 
-        var spacer := Control.new(); spacer.name = "Spacer"; spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        var spacer := Control.new()
+        spacer.name = "Spacer"; spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
         title_bar.add_child(spacer)
 
-        close_btn = Button.new(); close_btn.name = "CloseX"; close_btn.text = "X"; close_btn.focus_mode = Control.FOCUS_NONE
+        # Close ボタン
+        close_btn = Button.new()
+        close_btn.name = "CloseX"; close_btn.text = "X"; close_btn.focus_mode = Control.FOCUS_NONE
         title_bar.add_child(close_btn)
+        
+        # Save/Load ボタンをここで生成 (TitleBar内に追加)
+        save_btn = Button.new()
+        save_btn.name = "SaveBtn"; save_btn.text = "Save/Load"
+        title_bar.add_child(save_btn)
+
         # タイトルバーでドラッグ
         title_bar.gui_input.connect(_on_title_gui_input)
     else:
         close_btn = title_bar.get_node_or_null("CloseX") as Button
+        save_btn = title_bar.get_node_or_null("SaveBtn") as Button
 
+func _build_content_area(parent: VBoxContainer) -> void:
     # コンテンツ部分（余白つき）
-    var margin := frame.get_node_or_null("Margin") as MarginContainer
+    var margin := parent.get_node_or_null("Margin") as MarginContainer
     if margin == null:
-        margin = MarginContainer.new(); margin.name = "Margin"
+        margin = MarginContainer.new()
+        margin.name = "Margin"
         margin.add_theme_constant_override("margin_left", 12)
         margin.add_theme_constant_override("margin_right", 12)
         margin.add_theme_constant_override("margin_top", 8)
         margin.add_theme_constant_override("margin_bottom", 12)
-        frame.add_child(margin)
+        parent.add_child(margin)
 
     var vb := margin.get_node_or_null("VBox") as VBoxContainer
     if vb == null:
-        vb = VBoxContainer.new(); vb.name = "VBox"; margin.add_child(vb)
+        vb = VBoxContainer.new()
+        vb.name = "VBox"; margin.add_child(vb)
 
     var row := vb.get_node_or_null("Row") as HBoxContainer
     if row == null:
-        row = HBoxContainer.new(); row.name = "Row"; vb.add_child(row)
+        row = HBoxContainer.new()
+        row.name = "Row"; vb.add_child(row)
 
     # --- Buttons ---
-    trade_btn = row.get_node_or_null("TradeBtn") as Button
-    if trade_btn == null:
-        trade_btn = Button.new(); trade_btn.name = "TradeBtn"; trade_btn.text = "Trade"; row.add_child(trade_btn)
-    map_btn = row.get_node_or_null("MapBtn") as Button
-    if map_btn == null:
-        map_btn = Button.new(); map_btn.name = "MapBtn"; map_btn.text = "Map"; row.add_child(map_btn)
-    step_btn = row.get_node_or_null("StepBtn") as Button
-    if step_btn == null:
-        step_btn = Button.new(); step_btn.name = "StepBtn"; step_btn.text = "+1 Day"; row.add_child(step_btn)
-    move_btn = row.get_node_or_null("MoveBtn") as Button
-    if move_btn == null:
-        move_btn = Button.new(); move_btn.name = "MoveBtn"; move_btn.text = "Move"; row.add_child(move_btn)
-    inv_btn = row.get_node_or_null("InvBtn") as Button
-    if inv_btn == null:
-        inv_btn = Button.new(); inv_btn.name = "InvBtn"; inv_btn.text = "Inv"; row.add_child(inv_btn)
+    trade_btn = _ensure_button(row, "TradeBtn", "Trade")
+    map_btn = _ensure_button(row, "MapBtn", "Map")
+    step_btn = _ensure_button(row, "StepBtn", "+1 Day")
+    move_btn = _ensure_button(row, "MoveBtn", "Move")
+    inv_btn = _ensure_button(row, "InvBtn", "Inv")
 
     # --- Info Area ---
     var sep := vb.get_node_or_null("HSeparator") as HSeparator
     if sep == null:
-        sep = HSeparator.new(); sep.name = "HSeparator"; vb.add_child(sep)
+        sep = HSeparator.new()
+        sep.name = "HSeparator"; vb.add_child(sep)
 
     var info := vb.get_node_or_null("Info") as VBoxContainer
     if info == null:
-        info = VBoxContainer.new(); info.name = "Info"; vb.add_child(info)
+        info = VBoxContainer.new()
+        info.name = "Info"; vb.add_child(info)
 
+    # Info Labels
     info_day = info.get_node_or_null("Day") as Label
     if info_day == null:
-        info_day = _add_info_line(info, "日付", "Day")
+        info_day = _add_info_line(info, "日数", "Day")
     info_city = info.get_node_or_null("City") as Label
     if info_city == null:
         info_city = _add_info_line(info, "現在地", "City")
@@ -155,14 +174,75 @@ func _ensure_ui() -> void:
     if info_cargo == null:
         info_cargo = _add_info_line(info, "積載", "Cargo")
 
+# ヘルパー関数: ボタン生成
+func _ensure_button(parent: HBoxContainer, name: String, text: String) -> Button:
+    var btn = parent.get_node_or_null(name) as Button
+    if btn == null:
+        btn = Button.new()
+        btn.name = name
+        btn.text = text
+        parent.add_child(btn)
+    return btn
+
+# ヘルパー関数: 情報行生成
 func _add_info_line(parent: VBoxContainer, title: String, name: String) -> Label:
     var row := HBoxContainer.new()
-    var l := Label.new(); l.text = title; l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    var v := Label.new(); v.name = name
+    var l := Label.new()
+    l.text = title; l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    var v := Label.new()
+    v.name = name
     row.add_child(l); row.add_child(v); parent.add_child(row)
     return v
 
+func _ensure_save_ui() -> void:
+    if panel == null: return
+    
+    # Save/LoadボタンがTitleBarに存在することを確認し、シグナル接続
+    if save_btn and not save_btn.pressed.is_connected(Callable(self, "_on_save_menu")):
+        save_btn.pressed.connect(_on_save_menu)
+
+    # Save Menuの親ノードとしてFrame (VBoxContainer) を使用する
+    var frame = panel.get_node_or_null("Frame") as VBoxContainer
+    if frame == null: return
+
+    save_menu = frame.get_node_or_null("SaveMenu") as PanelContainer
+    if save_menu == null:
+        save_menu = PanelContainer.new()
+        save_menu.name = "SaveMenu"; save_menu.visible = false
+        frame.add_child(save_menu)
+
+        var sm_v := VBoxContainer.new()
+        sm_v.name = "SBody"; save_menu.add_child(sm_v)
+        
+        var sm_title := Label.new()
+        sm_title.text = "Save / Load"
+        sm_title.add_theme_font_size_override("font_size", 14); sm_v.add_child(sm_title)
+
+        for s in [1, 2]:
+            var row_s := HBoxContainer.new()
+            row_s.name = "Slot%d" % s; sm_v.add_child(row_s)
+            
+            var lab := Label.new()
+            lab.name = "Label"; lab.text = "-"
+            row_s.add_child(lab)
+            
+            var spacer_s := Control.new()
+            spacer_s.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+            row_s.add_child(spacer_s)
+            
+            var btn_save := Button.new()
+            btn_save.name = "SaveBtn"; btn_save.text = "Save"
+            row_s.add_child(btn_save)
+            
+            var btn_load := Button.new()
+            btn_load.name = "LoadBtn"; btn_load.text = "Load"
+            row_s.add_child(btn_load)
+            
+            btn_save.pressed.connect(Callable(self, "_on_save_slot").bind(s))
+            btn_load.pressed.connect(Callable(self, "_on_load_slot").bind(s))
+
 func _connect_signals() -> void:
+    # シグナル接続
     if close_btn and not close_btn.pressed.is_connected(Callable(self, "_on_close")):
         close_btn.pressed.connect(_on_close)
     if trade_btn and not trade_btn.pressed.is_connected(Callable(self, "_on_trade")):
@@ -180,7 +260,7 @@ func _connect_signals() -> void:
 func _rebuild() -> void:
     if world == null:
         return
-    info_day.text = _format_date()
+    info_day.text = str(world.day)
     var cid := String(world.player.get("city", ""))
     var moving := bool(world.player.get("enroute", false))
     if moving:
@@ -197,21 +277,6 @@ func _rebuild() -> void:
 
 func _city_name(cid: String) -> String:
     return String(world.cities[cid]["name"]) if world and world.cities.has(cid) else cid
-
-# --- 日付フォーマット（Y/M/D） ---
-func _format_date() -> String:
-    if world == null:
-        return ""
-    if world.has_method("format_date"):
-        return String(world.call("format_date"))
-    var d: int = int(world.day)
-    var days_per_month := 30
-    var months_per_year := 12
-    var days_per_year := days_per_month * months_per_year
-    var y := (d / days_per_year) + 1
-    var m := ((d % days_per_year) / days_per_month) + 1
-    var dm := (d % days_per_month) + 1
-    return "%d年%02d月%02d日" % [y, m, dm]
 
 # --- Buttons ---
 func _on_trade() -> void:
@@ -255,3 +320,41 @@ func _on_title_gui_input(ev: InputEvent) -> void:
     elif ev is InputEventMouseMotion and _dragging:
         var delta := (ev as InputEventMouseMotion).global_position - _drag_start
         panel.global_position = _panel_start + delta
+
+
+# --- Save/Load submenu logic ---
+func _on_save_menu() -> void:
+    if save_menu == null:
+        return
+    save_menu.visible = not save_menu.visible
+    if save_menu.visible:
+        _refresh_save_menu()
+
+func _refresh_save_menu() -> void:
+    if world == null or save_menu == null:
+        return
+    for s in [1, 2]:
+        var row := save_menu.get_node("SBody/Slot%d" % s) as HBoxContainer
+        var lab := row.get_node("Label") as Label
+        var btn_load := row.get_node("LoadBtn") as Button
+        # 修正箇所: 戻り値の型をDictionaryとして明示
+        var meta := world.get_slot_summary(s) as Dictionary
+        
+        if meta.get("exists", false):
+            var date := String(meta.get("date", "-"))
+            var city := String(meta.get("city", ""))
+            var cash := float(meta.get("cash", 0.0))
+            lab.text = "Slot %d — %s  /  %s  /  %.1f" % [s, date, _city_name(city), cash]
+            btn_load.disabled = false
+        else:
+            lab.text = "Slot %d — (Empty)" % s
+            btn_load.disabled = true
+
+func _on_save_slot(slot: int) -> void:
+    if world and world.save_to_slot(slot):
+        _refresh_save_menu()
+
+func _on_load_slot(slot: int) -> void:
+    if world and world.load_from_slot(slot):
+        _rebuild()
+        _refresh_save_menu()
