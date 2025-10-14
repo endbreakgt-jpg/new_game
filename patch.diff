@@ -1,0 +1,53 @@
+diff --git a/.gitignore b/.gitignore
+index 3c7f7d1..b9a2a6a 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -13,3 +13,4 @@ Thumbs.db
+ .idea/
+ 
+ # Python helpers
+ __pycache__/
+ *.pyc
++tools/
+diff --git a/README.md b/README.md
+new file mode 100644
+index 0000000..3f0c2cc
+--- /dev/null
++++ b/README.md
+@@ -0,0 +1,35 @@
++# Guild Of Merchants (working title)
++
++Godot 4.3 / 2D プロトタイプ。  
++経済シミュレーション＋交易アドベンチャーの実験用プロジェクトです。
++
++## Quick Start
++
++1. Godot 4.3 をインストール
++2. このリポジトリを Godot で開く（`project.godot` を選択）
++3. **F5**（または ▶︎）で実行
++
++## Debug Tips
++
++- 画面右上 **Debug** → デバッグパネル  
++  - Mid / Spread / Shortage(EMA) の確認  
++  - **World (ALL)** を選ぶと世界平均・世界在庫の集計を表示  
++  - Supply Stats（Today / Month / All-time）
++- **Menu → Save/Load**  
++  - 2スロット（`user://saves/slot01.json` / `slot02.json`）
++  - スロット欄に **日付 / 現在地 / 所持金** が表示されます
++
++## コーディング規約（最小）
++
++- GDScript: インデント 4 スペース、LF、UTF-8
++- Variant 推論は警告をエラー扱いにしているため、**明示型**で記述  
++  例：`var meta: Dictionary = ... as Dictionary`
++
++## ブランチ運用（簡易）
++
++- `main`: 動作する安定版
++- `dev`: 次スプリントの統合
++- `feature/<short-title>`: 個別タスク
++
++## ライセンス
++
++WIP（決まり次第ここに記載）
