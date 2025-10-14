@@ -132,7 +132,7 @@ var _paused: bool = false
 # -------- utils --------
 func _num(x) -> float:
     var s: String = str(x)
-    s = s.replace(" ", "").replace("，", "").replace(",", "")
+    s = s.replace("�", "").replace("，", "").replace(",", "")
     s = s.replace("．", ".").replace("－", "-")
     var fw := "０１２３４５６７８９"
     for i in range(10):
@@ -1366,3 +1366,114 @@ func _classify_travel_row(r: Dictionary) -> int:
         if val < 0.0: return -1  # 回収（良）
         return 0
     return 0
+
+
+# ==== Save / Load ==========================================================
+
+func _slot_path(slot: int) -> String:
+    return "user://saves/slot%02d.json" % slot
+
+func get_slot_summary(slot: int) -> Dictionary:
+    var path := _slot_path(slot)
+    var da := DirAccess.open("user://")
+    if da and not da.dir_exists("user://saves"):
+        return {"exists": false}
+    if not FileAccess.file_exists(path):
+        return {"exists": false}
+    var f := FileAccess.open(path, FileAccess.READ)
+    if f == null:
+        return {"exists": false}
+    var data_any: Variant = JSON.parse_string(f.get_as_text())
+    if data_any is Dictionary:
+        var data_dict: Dictionary = data_any
+        var meta: Dictionary = data_dict.get("meta", {}) as Dictionary
+        return {
+            "exists": true,
+            "date": String(meta.get("date", "")),
+            "day": int(meta.get("day", 0)),
+            "city": String(meta.get("player_city", "")),
+            "cash": float(meta.get("player_cash", 0.0)),
+        }
+    return {"exists": false}
+
+func save_to_slot(slot: int) -> bool:
+    var path := _slot_path(slot)
+    DirAccess.make_dir_recursive_absolute("user://saves")
+    var f := FileAccess.open(path, FileAccess.WRITE)
+    if f == null:
+        return false
+    var payload := _make_save_payload()
+    f.store_string(JSON.stringify(payload))
+    f.flush()
+    return true
+
+func load_from_slot(slot: int) -> bool:
+    var path := _slot_path(slot)
+    if not FileAccess.file_exists(path):
+        return false
+    var f := FileAccess.open(path, FileAccess.READ)
+    if f == null:
+        return false
+    var data_any: Variant = JSON.parse_string(f.get_as_text())
+    if not (data_any is Dictionary):
+        return false
+    _apply_save_payload(data_any as Dictionary)
+    if has_signal("world_updated"):
+        world_updated.emit()
+    return true
+
+func _make_save_payload() -> Dictionary:
+    var meta: Dictionary = {
+        "ver": 1,
+        "date": (format_date() if has_method("format_date") else "Day %d" % day),
+        "day": day,
+        "player_city": String(player.get("city","")),
+        "player_cash": float(player.get("cash",0.0)),
+        "saved_at": Time.get_datetime_string_from_system(),
+    }
+    var state: Dictionary = {
+        "day": day,
+        "player": player,
+        "price": price,
+        "stock": stock,
+        "_shortage_ema": _shortage_ema,
+        "_effects_active": _effects_active,
+        "supply_count_today": (supply_count_today if "supply_count_today" in self else 0),
+        "supply_count_total": (supply_count_total if "supply_count_total" in self else 0),
+        "supply_count_by_month": (supply_count_by_month if "supply_count_by_month" in self else {}),
+        "supply_count_by_city": (supply_count_by_city if "supply_count_by_city" in self else {}),
+        "supply_count_by_pid": (supply_count_by_pid if "supply_count_by_pid" in self else {}),
+        "event_log": (event_log if "event_log" in self else []),
+    }
+    return {"meta": meta, "state": state}
+
+func _apply_save_payload(data: Dictionary) -> void:
+    var state: Dictionary = (data.get("state", {}) as Dictionary)
+    day = int(state.get("day", day))
+
+    if state.has("player"): player = state.get("player") as Dictionary
+    if state.has("price"):  price  = state.get("price")  as Dictionary
+    if state.has("stock"):  stock  = state.get("stock")  as Dictionary
+    if state.has("_shortage_ema"): _shortage_ema = state.get("_shortage_ema") as Dictionary
+
+    # 型付き配列に組み直してから代入（ここが今回のクラッシュ原因）
+    if state.has("_effects_active"):
+        var arr_any: Array = state.get("_effects_active", [])
+        var tmp: Array[Dictionary] = []
+        for e in arr_any:
+            if e is Dictionary:
+                tmp.append(e as Dictionary)
+        _effects_active = tmp
+
+    if state.has("supply_count_today"):  supply_count_today  = int(state.get("supply_count_today"))
+    if state.has("supply_count_total"):  supply_count_total  = int(state.get("supply_count_total"))
+    if state.has("supply_count_by_month"): supply_count_by_month = state.get("supply_count_by_month") as Dictionary
+    if state.has("supply_count_by_city"):  supply_count_by_city  = state.get("supply_count_by_city")  as Dictionary
+    if state.has("supply_count_by_pid"):   supply_count_by_pid   = state.get("supply_count_by_pid")   as Dictionary
+
+    if state.has("event_log"):
+        var src: Array = state.get("event_log", [])
+        var tmp2: Array[String] = []
+        for s in src:
+            tmp2.append(String(s))
+        event_log = tmp2
