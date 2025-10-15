@@ -3,6 +3,10 @@ extends Control
 
 @export var world_path: NodePath
 
+@export var dialog_player_path: NodePath
+var dialog_player: Node = null
+var _test_dialog_done: bool = false
+
 var world: World
 
 @export var show_supply_toast: bool = false
@@ -47,6 +51,9 @@ var _event_text: RichTextLabel = null
 #@onready var debug_btn: Button = $Margin/VBox/TopBar/DebugBtn
 
 func _ready() -> void:
+
+    if dialog_player_path != NodePath():
+        dialog_player = get_node_or_null(dialog_player_path)
     _apply_full_rect(self)
     _apply_full_rect($Margin)
     _apply_full_rect($Margin/VBox)
@@ -271,8 +278,14 @@ func _wire_buttons() -> void:
 func _on_menu_btn() -> void:
     _spawn_menu_if_needed()
     if menu_win: _place_popups()
+    var was_visible := false
+    if menu_win is Window:
+        was_visible = (menu_win as Window).visible
+    elif menu_win is Control:
+        was_visible = (menu_win as Control).visible
     _toggle_popup(menu_win)
-
+    if not was_visible:
+        _play_test_dialog_once()
 func _on_trade_btn() -> void:
     _spawn_trade_if_needed()
     if trade_win: _place_popups()
@@ -960,3 +973,39 @@ func _init_debug_panel_after_ready() -> void:
             debug_panel.call("_populate_options")
         if debug_panel.has_method("_update_stats"):
             debug_panel.call("_update_stats")
+
+
+# Test: open MenuPanel -> play dialogs.csv("tuto_intro") once
+func _play_test_dialog_once() -> void:
+     if _test_dialog_done:
+         return
+     _test_dialog_done = true
+
+     # 1) DialogPlayer を解決
+     if dialog_player == null:
+         if dialog_player_path != NodePath("") and has_node(dialog_player_path):
+             dialog_player = get_node_or_null(dialog_player_path)
+         if dialog_player == null:
+             dialog_player = get_tree().root.find_child("DialogPlayer", true, false)
+
+     # 2) DialogPlayer があれば play("tuto_intro")
+     if dialog_player and dialog_player.has_method("play"):
+         dialog_player.call("play", "tuto_intro")
+         return
+
+     # 3) フォールバック：Dialog UI に直接流す
+     var ui := get_tree().root.find_child("Dialog", true, false)
+     if ui and ui.has_method("show_lines"):
+         var loader := CsvLoader.new()
+         add_child(loader)
+         var rows := loader.load_csv_dicts("res://data/dialogs.csv")
+         var lines: Array[String] = []
+         var speaker := ""
+         for r_any in rows:
+             var r: Dictionary = r_any
+             if String(r.get("id","")) != "tuto_intro": continue
+             if speaker == "": speaker = String(r.get("speaker", r.get("char","")))
+             var txt := String(r.get("text_ja", r.get("text","")))
+             if txt != "": lines.append(txt)
+         if lines.size() > 0:
+             ui.call("show_lines", lines, speaker)
