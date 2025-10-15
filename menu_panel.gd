@@ -22,6 +22,12 @@ var info_city: Label
 var info_cash: Label
 var info_cargo: Label
 
+var dlg_save_confirm: ConfirmationDialog
+var dlg_load_confirm: ConfirmationDialog
+var dlg_info: AcceptDialog
+var _pending_slot: int = 0
+
+
 # ドラッグ用
 var _dragging := false
 var _drag_start := Vector2.ZERO
@@ -38,6 +44,7 @@ func _ready() -> void:
     _ensure_ui()
     _connect_signals()
     call_deferred("_late_wire")
+    call_deferred("_ensure_dialogs")
 
 func _late_wire() -> void:
     # Worldのシグナル接続は遅延実行
@@ -241,6 +248,43 @@ func _ensure_save_ui() -> void:
             btn_save.pressed.connect(Callable(self, "_on_save_slot").bind(s))
             btn_load.pressed.connect(Callable(self, "_on_load_slot").bind(s))
 
+
+# --- Dialogs ---
+func _ensure_dialogs() -> void:
+    if dlg_save_confirm == null:
+        dlg_save_confirm = ConfirmationDialog.new()
+        dlg_save_confirm.name = "SaveConfirm"
+        dlg_save_confirm.title = "確認"
+        dlg_save_confirm.dialog_text = "セーブしますか？"
+        add_child(dlg_save_confirm)
+        dlg_save_confirm.confirmed.connect(func():
+            if world and world.save_to_slot(_pending_slot):
+                _refresh_save_menu()
+                _show_info("セーブしました。")
+        )
+    if dlg_load_confirm == null:
+        dlg_load_confirm = ConfirmationDialog.new()
+        dlg_load_confirm.name = "LoadConfirm"
+        dlg_load_confirm.title = "確認"
+        dlg_load_confirm.dialog_text = "ロードしますか？"
+        add_child(dlg_load_confirm)
+        dlg_load_confirm.confirmed.connect(func():
+            if world and world.load_from_slot(_pending_slot):
+                _rebuild()
+                _refresh_save_menu()
+                _show_info("ロードしました。")
+        )
+    if dlg_info == null:
+        dlg_info = AcceptDialog.new()
+        dlg_info.name = "InfoDialog"
+        dlg_info.title = "情報"
+        add_child(dlg_info)
+
+func _show_info(msg: String) -> void:
+    if dlg_info == null:
+        return
+    dlg_info.dialog_text = msg
+    dlg_info.popup_centered()
 func _connect_signals() -> void:
     # シグナル接続
     if close_btn and not close_btn.pressed.is_connected(Callable(self, "_on_close")):
@@ -351,10 +395,13 @@ func _refresh_save_menu() -> void:
             btn_load.disabled = true
 
 func _on_save_slot(slot: int) -> void:
-    if world and world.save_to_slot(slot):
-        _refresh_save_menu()
+    _pending_slot = slot
+    if dlg_save_confirm == null:
+        _ensure_dialogs()
+    dlg_save_confirm.popup_centered()
 
 func _on_load_slot(slot: int) -> void:
-    if world and world.load_from_slot(slot):
-        _rebuild()
-        _refresh_save_menu()
+    _pending_slot = slot
+    if dlg_load_confirm == null:
+        _ensure_dialogs()
+    dlg_load_confirm.popup_centered()
