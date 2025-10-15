@@ -450,7 +450,7 @@ func _spawn_debug_if_needed() -> void:
         debug_window.size = Vector2i(480, 420)
         debug_window.min_size = Vector2i(360, 300)
         # Godot 4: unresizable は存在しないため、resizable = true に修正
-        debug_window.resizable = true
+        debug_window.unresizable = false
 
         var main := get_window()
         if main:
@@ -511,7 +511,7 @@ func _open_map_popup() -> void:
     map_window.size = Vector2i(900, 520)
     map_window.min_size = Vector2i(640, 360)
     # Godot 4: unresizable は存在しないため、resizable = true に修正
-    map_window.resizable = true
+    map_window.unresizable = false
     var main := get_window()
     if main:
         main.add_child(map_window)
@@ -671,7 +671,7 @@ func _open_inventory_window() -> void:
     inventory_window = InvWin.new()
     inventory_window.name = "InventoryWindow"
     inventory_window.title = "Inventory"
-    inventory_window.resizable = true # 修正: unresizable -> resizable
+    inventory_window.unresizable = false # 修正: unresizable -> resizable
     if inventory_window.has_method("set"):
         inventory_window.set("world", world)
     var main := get_window()
