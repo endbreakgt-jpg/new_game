@@ -1,0 +1,6 @@
+id,seq,speaker,text,portrait
+tuto_intro,1,案内人,ようこそギルドの街へ。ここでは買い付けと販売で利益を出していきます。,res://ui/portraits/guide.png
+tuto_intro,2,案内人,まずは市場を開いて相場を見てみましょう。需要が高い都市で売るのが基本です。,res://ui/portraits/guide.png
+tuto_intro,3,案内人,準備ができたらマップで隣町へ移動してみてください。,res://ui/portraits/guide.png
+event_fair_city,1,市の知らせ,本日、中央広場で定期市が開催されます！,res://ui/portraits/town_crier.png
+event_fair_city,2,市の知らせ,需要が高まりスプレッドが狭くなります。仕入れの好機かもしれません。,res://ui/portraits/town_crier.png
