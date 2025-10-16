@@ -44,7 +44,7 @@ func _prepare_dialog_ui() -> void:
         return
     if not dialog_ui.is_inside_tree():
         return
-    dialog_ui.pause_mode = Node.PAUSE_MODE_PROCESS
+    dialog_ui.process_mode = Node.PROCESS_MODE_WHEN_PAUSED
     if dialog_ui is Control:
         var ctrl := dialog_ui as Control
         if not ctrl.top_level:

@@ -19,14 +19,14 @@ var current_index: int = 0
 var current_text_index: int = 0
 
 func _ready() -> void:
-    pause_mode = Node.PAUSE_MODE_PROCESS
+    process_mode = Node.PROCESS_MODE_WHEN_PAUSED
     _setup_layout()
     visible = false
     next.visible = false
     _apply_timer_wait_time()
     if not text_delay.timeout.is_connected(_on_text_delay_timeout):
         text_delay.timeout.connect(_on_text_delay_timeout)
-    text_delay.pause_mode = Node.PAUSE_MODE_PROCESS
+    text_delay.process_mode = Node.PROCESS_MODE_WHEN_PAUSED
 
 # --- NEW: place message window at the bottom of the screen ---
 func _setup_layout() -> void:
