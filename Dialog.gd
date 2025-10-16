@@ -19,12 +19,14 @@ var current_index: int = 0
 var current_text_index: int = 0
 
 func _ready() -> void:
+    pause_mode = Node.PAUSE_MODE_PROCESS
     _setup_layout()
     visible = false
     next.visible = false
     _apply_timer_wait_time()
     if not text_delay.timeout.is_connected(_on_text_delay_timeout):
         text_delay.timeout.connect(_on_text_delay_timeout)
+    text_delay.pause_mode = Node.PAUSE_MODE_PROCESS
 
 # --- NEW: place message window at the bottom of the screen ---
 func _setup_layout() -> void:
@@ -74,6 +76,7 @@ func start_dialog() -> void:
     current_text_index = 0
     current_index = 0
     is_dialog_mode = true
+    _ensure_on_top()
     visible = true
     next.visible = false
     text_delay.start()
@@ -102,7 +105,6 @@ func _input(event: InputEvent) -> void:
     if not is_dialog_mode:
         return
     if event.is_action_pressed(input_action_next):
-        # 1) まだ行が残っている
         if current_index < text_to_display.size():
             var line := text_to_display[current_index]
             # 1a) 途中なら即表示
@@ -128,4 +130,9 @@ func is_busy() -> bool:
 func set_speed(new_chars_per_sec: float) -> void:
     chars_per_sec = max(1.0, new_chars_per_sec)
     _apply_timer_wait_time()
-#test
+
+func _ensure_on_top() -> void:
+    if not top_level:
+        top_level = true
+    z_index = max(z_index, 999)
+    call_deferred("raise")
