@@ -19,6 +19,7 @@ var current_index: int = 0
 var current_text_index: int = 0
 
 func _ready() -> void:
+    # ダイアログはゲームをポーズしていても動く必要がある
     process_mode = Node.PROCESS_MODE_WHEN_PAUSED
     _setup_layout()
     visible = false
@@ -28,9 +29,8 @@ func _ready() -> void:
         text_delay.timeout.connect(_on_text_delay_timeout)
     text_delay.process_mode = Node.PROCESS_MODE_WHEN_PAUSED
 
-# --- NEW: place message window at the bottom of the screen ---
+# 画面下に固定するレイアウト
 func _setup_layout() -> void:
-    # Anchor to screen bottom, with margins. Works even when added under HUD.
     set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
     anchor_left = 0.0
     anchor_right = 1.0
@@ -38,14 +38,13 @@ func _setup_layout() -> void:
     anchor_bottom = 1.0
     offset_left = 16
     offset_right = -16
-    var h := 160  # height of the message window
-    offset_top = -h - 12   # distance from bottom
+    var h := 160
+    offset_top = -h - 12
     offset_bottom = -12
     custom_minimum_size = Vector2(0, h)
-    z_index = 999  # bring to front
+    z_index = 999
     mouse_filter = Control.MOUSE_FILTER_STOP
 
-    # simple dark style (optional - safe if using theme)
     var sb := StyleBoxFlat.new()
     sb.bg_color = Color(0, 0, 0, 0.75)
     sb.border_color = Color(0.35, 0.35, 0.35)
@@ -107,14 +106,14 @@ func _input(event: InputEvent) -> void:
     if event.is_action_pressed(input_action_next):
         if current_index < text_to_display.size():
             var line := text_to_display[current_index]
-            # 1a) 途中なら即表示
+            # 途中なら即座に全文を表示
             if current_text_index < line.length() and current_text_index != 0:
                 content.text = line
                 current_text_index = line.length()
                 text_delay.stop()
                 next.visible = true
             else:
-                # 1b) 次の行へ
+                # 次の行へ
                 current_index += 1
                 advanced.emit(current_index)
                 if current_index < text_to_display.size():
