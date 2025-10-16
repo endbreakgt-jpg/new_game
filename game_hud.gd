@@ -977,35 +977,49 @@ func _init_debug_panel_after_ready() -> void:
 
 # Test: open MenuPanel -> play dialogs.csv("tuto_intro") once
 func _play_test_dialog_once() -> void:
-     if _test_dialog_done:
-         return
-     _test_dialog_done = true
+    if _test_dialog_done:
+        return
 
-     # 1) DialogPlayer を解決
-     if dialog_player == null:
-         if dialog_player_path != NodePath("") and has_node(dialog_player_path):
-             dialog_player = get_node_or_null(dialog_player_path)
-         if dialog_player == null:
-             dialog_player = get_tree().root.find_child("DialogPlayer", true, false)
+    if dialog_player == null:
+        _resolve_dialog_player()
 
-     # 2) DialogPlayer があれば play("tuto_intro")
-     if dialog_player and dialog_player.has_method("play"):
-         dialog_player.call("play", "tuto_intro")
-         return
+    if dialog_player and dialog_player.has_method("play"):
+        var result = dialog_player.call("play", "tuto_intro")
+        if result is bool:
+            if result:
+                _test_dialog_done = true
+                return
+        elif result:
+            _test_dialog_done = true
+            return
 
-     # 3) フォールバック：Dialog UI に直接流す
-     var ui := get_tree().root.find_child("Dialog", true, false)
-     if ui and ui.has_method("show_lines"):
-         var loader := CsvLoader.new()
-         add_child(loader)
-         var rows := loader.load_csv_dicts("res://data/dialogs.csv")
-         var lines: Array[String] = []
-         var speaker := ""
-         for r_any in rows:
-             var r: Dictionary = r_any
-             if String(r.get("id","")) != "tuto_intro": continue
-             if speaker == "": speaker = String(r.get("speaker", r.get("char","")))
-             var txt := String(r.get("text_ja", r.get("text","")))
-             if txt != "": lines.append(txt)
-         if lines.size() > 0:
-             ui.call("show_lines", lines, speaker)
+    # 3) フォールバック：Dialog UI に直接流す
+    var ui := get_tree().root.find_child("Dialog", true, false)
+    if ui and ui.has_method("show_lines"):
+        var loader := CsvLoader.new()
+        add_child(loader)
+        var rows := loader.load_csv_dicts("res://data/dialogs.csv")
+        var lines: Array[String] = []
+        var speaker := ""
+        for r_any in rows:
+            var r: Dictionary = r_any
+            if String(r.get("id", "")) != "tuto_intro":
+                continue
+            if speaker == "":
+                speaker = String(r.get("speaker", r.get("char", "")))
+            var txt := String(r.get("text", ""))
+            if txt != "":
+                lines.append(txt)
+        if lines.size() > 0:
+            ui.call("show_lines", lines, speaker)
+            _test_dialog_done = true
+            return
+
+    # いずれの手段でも表示できなかった場合は、次回の再試行に備えて早期 return
+    push_warning("Menu test dialog could not be played. DialogPlayer/Dialog is missing?")
+
+func _resolve_dialog_player() -> void:
+    if dialog_player_path != NodePath("") and has_node(dialog_player_path):
+        dialog_player = get_node_or_null(dialog_player_path)
+    if dialog_player == null:
+        dialog_player = get_tree().root.find_child("DialogPlayer", true, false)

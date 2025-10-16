@@ -1,35 +1,108 @@
---- a/Dialog.gd
-+++ b/Dialog.gd
-@@ -19,12 +19,14 @@
- var current_text_index: int = 0
+diff --git a/game_hud.gd b/game_hud.gd
+index 50b7d745100368b6176d1ba114648e868aa90577..01e051539cad7d460bfc0d02574aa5d97307f670 100644
+--- a/game_hud.gd
++++ b/game_hud.gd
+@@ -955,57 +955,71 @@ func _find_debug_panel() -> void:
+     if child and child is DebugPanel:
+         debug_panel = child as DebugPanel
+         return
+     # 2) シーンツリー上を探索
+     var found := get_tree().root.find_child("DebugPanel", true, false)
+     if found and found is DebugPanel:
+         debug_panel = found as DebugPanel
  
- func _ready() -> void:
-+    pause_mode = Node.PAUSE_MODE_PROCESS
-     _setup_layout()
-     visible = false
-     next.visible = false
-     _apply_timer_wait_time()
-     if not text_delay.timeout.is_connected(_on_text_delay_timeout):
-         text_delay.timeout.connect(_on_text_delay_timeout)
-+    text_delay.pause_mode = Node.PAUSE_MODE_PROCESS
+ func _on_world_updated_debug() -> void:
+     _find_debug_panel()
+     if debug_panel and debug_panel.visible and debug_panel.has_method("_update_stats"):
+         debug_panel.call("_update_stats")
  
- # --- NEW: place message window at the bottom of the screen ---
- func _setup_layout() -> void:
-@@ -74,6 +76,7 @@
-     current_text_index = 0
-     current_index = 0
-     is_dialog_mode = true
-+    _ensure_on_top()
-     visible = true
-     next.visible = false
-     text_delay.start()
-@@ -128,3 +131,9 @@
- func set_speed(new_chars_per_sec: float) -> void:
-     chars_per_sec = max(1.0, new_chars_per_sec)
-     _apply_timer_wait_time()
+ 
+ func _init_debug_panel_after_ready() -> void:
+     if debug_panel and world:
+         debug_panel.world = world
+         if debug_panel.has_method("_populate_options"):
+             debug_panel.call("_populate_options")
+         if debug_panel.has_method("_update_stats"):
+             debug_panel.call("_update_stats")
+ 
+ 
+ # Test: open MenuPanel -> play dialogs.csv("tuto_intro") once
+ func _play_test_dialog_once() -> void:
+-     if _test_dialog_done:
+-         return
+-     _test_dialog_done = true
+-
+-     # 1) DialogPlayer を解決
+-     if dialog_player == null:
+-         if dialog_player_path != NodePath("") and has_node(dialog_player_path):
+-             dialog_player = get_node_or_null(dialog_player_path)
+-         if dialog_player == null:
+-             dialog_player = get_tree().root.find_child("DialogPlayer", true, false)
+-
+-     # 2) DialogPlayer があれば play("tuto_intro")
+-     if dialog_player and dialog_player.has_method("play"):
+-         dialog_player.call("play", "tuto_intro")
+-         return
+-
+-     # 3) フォールバック：Dialog UI に直接流す
+-     var ui := get_tree().root.find_child("Dialog", true, false)
+-     if ui and ui.has_method("show_lines"):
+-         var loader := CsvLoader.new()
+-         add_child(loader)
+-         var rows := loader.load_csv_dicts("res://data/dialogs.csv")
+-         var lines: Array[String] = []
+-         var speaker := ""
+-         for r_any in rows:
+-             var r: Dictionary = r_any
+-             if String(r.get("id","")) != "tuto_intro": continue
+-             if speaker == "": speaker = String(r.get("speaker", r.get("char","")))
+-             var txt := String(r.get("text_ja", r.get("text","")))
+-             if txt != "": lines.append(txt)
+-         if lines.size() > 0:
+-             ui.call("show_lines", lines, speaker)
++    if _test_dialog_done:
++        return
 +
-+func _ensure_on_top() -> void:
-+    if not top_level:
-+        top_level = true
-+    z_index = max(z_index, 999)
-+    call_deferred("raise")
++    if dialog_player == null:
++        _resolve_dialog_player()
++
++    if dialog_player and dialog_player.has_method("play"):
++        var result = dialog_player.call("play", "tuto_intro")
++        if result is bool:
++            if result:
++                _test_dialog_done = true
++                return
++        elif result:
++            _test_dialog_done = true
++            return
++
++    # 3) フォールバック：Dialog UI に直接流す
++    var ui := get_tree().root.find_child("Dialog", true, false)
++    if ui and ui.has_method("show_lines"):
++        var loader := CsvLoader.new()
++        add_child(loader)
++        var rows := loader.load_csv_dicts("res://data/dialogs.csv")
++        var lines: Array[String] = []
++        var speaker := ""
++        for r_any in rows:
++            var r: Dictionary = r_any
++            if String(r.get("id", "")) != "tuto_intro":
++                continue
++            if speaker == "":
++                speaker = String(r.get("speaker", r.get("char", "")))
++            var txt := String(r.get("text", ""))
++            if txt != "":
++                lines.append(txt)
++        if lines.size() > 0:
++            ui.call("show_lines", lines, speaker)
++            _test_dialog_done = true
++            return
++
++    # いずれの手段でも表示できなかった場合は、次回の再試行に備えて早期 return
++    push_warning("Menu test dialog could not be played. DialogPlayer/Dialog is missing?")
++
++func _resolve_dialog_player() -> void:
++    if dialog_player_path != NodePath("") and has_node(dialog_player_path):
++        dialog_player = get_node_or_null(dialog_player_path)
++    if dialog_player == null:
++        dialog_player = get_tree().root.find_child("DialogPlayer", true, false)
