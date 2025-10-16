@@ -128,3 +128,4 @@ func is_busy() -> bool:
 func set_speed(new_chars_per_sec: float) -> void:
     chars_per_sec = max(1.0, new_chars_per_sec)
     _apply_timer_wait_time()
+#test
