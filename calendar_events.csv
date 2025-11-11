@@ -1,0 +1,4 @@
+event_id,city_id,type,start_day,duration,fee,crowd_factor
+EV001,RE0003,fair,30,3,5.0,2.0
+EV002,RE0001,fair,120,2,3.0,1.5
+EV003,RE0002,fair,210,1,2.0,1.2

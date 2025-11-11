@@ -1,7 +1,8 @@
-city_id,name,province,note
-RE0001,Durton,Pilton,商人のスタート地点
-RE0002,Boroughambe,Pilton,小規模農村
-RE0003,Pilton,Pilton,港湾の主要都市
-RE0004,Highmoor,Northreach,鉱山の町
-RE0005,Southwatch,Coastridge,漁港の集落
-RE0006,Alderdale,Greenvale,街道の分岐点
+city_id,name,province,note,CityRANK
+RE0001,Durton,Pilton,商人のスタート地点,5
+RE0002,Boroughambe,Pilton,小規模農村,3
+RE0003,Pilton,Pilton,港湾の主要都市,7
+RE0004,Highmoor,Pilton,鉱山の町,3
+RE0005,Southwatch,Pilton,湖に面した町,5
+RE0006,Alderdale,Pilton,***,3
+RE0007,Wolkess,Pilton,***,5

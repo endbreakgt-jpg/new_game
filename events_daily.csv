@@ -1,6 +1,19 @@
-id,weight,kind,target_city,target_pid,value,duration,flavor_ja
-NONE,60,none,*,*,0,0,今日は特に何も起こらなかった。
-D_TAX_CUT,10,tax_offset,*,*, -0.01,3,当局の減税措置で売上税が一時的に下がった（3日間）。
-D_TAX_HIKE,8,tax_offset,*,*, 0.02,2,臨時増税が発表され売上税が上がった（2日間）。
-D_PRICE_FEST,12,price_mult,RE0003,*, 1.15,3,定期市の盛り上がりでRE0003の相場が上振れ（3日間）。
-D_PRICE_GLUT,10,price_mult,*,PR02, 0.85,2,各地でPR02がだぶつき相場が下振れ（2日間）。
+id,weight,kind,value,tier,flavor_ja
+market_boom,8,price_mult,1.25,good,市場が活況だ！価格が上向きだ。
+royal_tax_holiday,3,tax_offset,-0.05,marvelous,王令：今週は免税だ！商人は胸を張れ。
+grand_festival,2,price_mult,1.30,marvelous,大祭の熱気に価格が跳ね上がる。
+guild_tax_cut,5,tax_offset,-0.03,great,行商組合の圧力で税が軽くなった。
+merchant_fair,5,price_mult,1.15,great,行商市が開かれ相場が賑わう。
+bountiful_harvest,4,price_mult,0.92,great,豊作の報で仕入れが安くなる。
+local_festival,8,price_mult,1.08,good,町祭りで需要が増えた。
+fee_relief,8,tax_offset,-0.01,good,雑税の軽減が告知された。
+regional_sale,8,price_mult,0.95,good,広場の特売で仕入れ値が下がる。
+levy_increase,8,tax_offset,0.02,bad,徵税強化で持ち出しが増える。
+market_slump,7,price_mult,0.90,bad,買い手が渋り相場が沈む。
+caravan_inspections,6,tax_offset,0.03,bad,検問強化で手数料が上がった。
+poor_harvest,6,price_mult,1.12,bad,不作の影響で相場が上向きだ。
+emergency_levy,4,tax_offset,0.05,worst,非常徴税：収益が削られる。
+supply_shock,4,price_mult,0.85,worst,物流混乱で売値が下落する。
+price_freeze,3,price_mult,0.80,worst,当局の価格統制で利幅が消える。
+war_tax,1,tax_offset,0.10,critical,戦時特別税の布告。懐が寒い。
+currency_crisis,1,price_mult,0.70,critical,通貨不安で価格が暴落。

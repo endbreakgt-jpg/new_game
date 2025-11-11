@@ -1,0 +1,16 @@
+product_id,name,consume_model,period_days,note
+PR001,木材,per_day,,日次消費（cons = base×rank係数）
+PR002,羊毛,per_day,,日次消費（cons = base×rank係数）
+PR003,小麦,per_day,,日次消費（cons = base×rank係数）
+PR004,Bベリー,per_day,,日次消費（cons = base×rank係数）
+PR005,タラ,per_day,,日次消費（cons = base×rank係数）
+PR006,塩,per_day,,日次消費（cons = base×rank係数）
+PR007,エール,per_day,,日次消費（cons = base×rank係数）
+PR008,ひら豆,per_day,,日次消費（cons = base×rank係数）
+PR009,鹿革,per_day,,日次消費（cons = base×rank係数）
+PR010,牛革,per_day,,日次消費（cons = base×rank係数）
+PR011,チーズ,per_day,,日次消費（cons = base×rank係数）
+PR012,石鹸,per_day,,日次消費（cons = base×rank係数）
+PR013,麻,per_day,,日次消費（cons = base×rank係数）
+PR014,茶,periodic,5,5日ごとにまとめて消費（平均は日次と同等）
+PR015,ワイン,periodic,5,5日ごとにまとめて消費（平均は日次と同等）
