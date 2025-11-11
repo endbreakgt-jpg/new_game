@@ -1,4 +1,4 @@
-# === OFFICIAL CANVAS ===
+﻿# === OFFICIAL CANVAS ===
 # World.gd (res://scripts/world.gd)
 # このキャンバスを唯一の最新版として使用します。重複キャンバスはアーカイブ対象。
 
