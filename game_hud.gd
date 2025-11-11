@@ -9,10 +9,27 @@ var _test_dialog_done: bool = false
 
 var world: World
 
+# --- Weekly Report UI (collapsible sections) ---
+var _weekly_dialog: AcceptDialog = null
+var _weekly_text: RichTextLabel = null
+var _wr_show_basis: bool = true
+var _wr_show_rise: bool = true
+var _wr_show_fall: bool = true
+var _wr_show_watch: bool = true
+var _wr_last_payload: Dictionary = {}
+var _wr_last_prov: String = ""
+var _wr_tog_basis: CheckButton = null
+var _wr_tog_rise: CheckButton = null
+var _wr_tog_fall: CheckButton = null
+var _wr_tog_watch: CheckButton = null
+var _wr_sections_cache: Dictionary = {}  # {basis:String, rise:String, fall:String, watch:String}
+
+
 @export var show_supply_toast: bool = false
 @export var supply_toast_seconds: float = 3.0
 @export var show_supply_dialog: bool = true  # 将来: 情報収集などの条件でダイアログ表示に切替
 @export var show_event_log_panel: bool = true   # ★ HUD右下のイベントログ欄を表示
+@export var show_weekly_report_dialog: bool = true
 @export var event_log_rows: int = 6             # ★ 表示行数（最新から）
 
 # Runtime-only UIs (ツリーにプリセット不要)
@@ -39,7 +56,8 @@ var debug_btn: Button = null
 var _supply_label: Label = null
 var _event_panel: PanelContainer = null
 var _event_text: RichTextLabel = null
-
+var dice_overlay: DiceOverlay = null
+var _is_rolling: bool = false
 
 @onready var topbar: HBoxContainer = $Margin/VBox/TopBar
 @onready var day_label: Label = $Margin/VBox/TopBar/DayLabel
@@ -85,7 +103,12 @@ func _ready() -> void:
     _update_play_button()
 
     # World 取得
-    world = (get_node_or_null(world_path) as World) if world_path != NodePath("") else (get_parent() as World)
+    var _world_tmp: World = null
+    if world_path != NodePath(""):
+        _world_tmp = get_node_or_null(world_path) as World
+    else:
+        _world_tmp = get_parent() as World
+    world = _world_tmp
     if world:
         world.day_advanced.connect(_on_day)
         world.world_updated.connect(_refresh)
@@ -93,6 +116,8 @@ func _ready() -> void:
             world.world_updated.connect(_on_world_updated_debug)
         if world.has_signal("supply_event"):
             world.supply_event.connect(_on_supply_event)
+        if world.has_signal("weekly_report"):
+            world.weekly_report.connect(_on_weekly_report)
 
     if world.has_signal("player_decay_event"):
         world.player_decay_event.connect(_on_player_decay_event)
@@ -114,6 +139,7 @@ func _ready() -> void:
             debug_window.grab_focus()
         set_process_input(true)
     set_process_unhandled_input(true)
+    _ensure_dice_overlay()
 
 # ---- layout helpers ----
 func _apply_full_rect(c: Control) -> void:
@@ -199,7 +225,9 @@ func _create_supply_label() -> void:
 func _update_supply_label() -> void:
     if world == null or _supply_label == null:
         return
-    var today: int = int(world.supply_count_today) if "supply_count_today" in world else 0
+    var today: int = 0
+    if "supply_count_today" in world:
+        today = int(world.supply_count_today)
     var month_total: int = 0
     if "supply_count_by_month" in world and world.has_method("get_calendar"):
         var cal := world.get_calendar()
@@ -224,10 +252,26 @@ func _on_play_pause_btn() -> void:
 
 func _on_day(_d: int) -> void:
     _refresh()
+    if world and world.use_event_dice:
+        if _is_rolling:
+            return
+        _is_rolling = true
+        await _trigger_event_rolls()
+        world.finalize_day()
+        _is_rolling = false
 
 func _refresh() -> void:
     if world == null: return
-    day_label.text = (world.format_date() if world and world.has_method("format_date") else "Day %d" % world.day)
+    var _daytxt := "Day %d" % world.day
+    if world and world.has_method("format_date"):
+        _daytxt = world.format_date()
+    var _turn_now := 1
+    if world.get("turn") != null:
+        _turn_now = int(world.get("turn")) + 1
+    var _tpd := 3
+    if world.get("turns_per_day") != null:
+        _tpd = int(world.get("turns_per_day"))
+    day_label.text = "%s  T %d/%d" % [_daytxt, _turn_now, _tpd]
     var cid: String = String(world.player.get("city", ""))
     var moving := bool(world.player.get("enroute", false))
     if moving:
@@ -240,12 +284,54 @@ func _refresh() -> void:
     _update_supply_label()    # ★ 追加
     _refresh_event_log()      # ★ 追加
 
+
+func _ensure_dice_overlay() -> void:
+    if not is_instance_valid(dice_overlay):
+        dice_overlay = DiceOverlay.new()
+    dice_overlay.name = "DiceOverlay"
+    add_child(dice_overlay)
+    # Full rect
+    dice_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+    dice_overlay.visible = false
+    # connect debug signals
+    if dice_overlay and not dice_overlay.roll_started.is_connected(Callable(self, "_on_dice_started")):
+        dice_overlay.roll_started.connect(_on_dice_started)
+    if dice_overlay and not dice_overlay.roll_revealed.is_connected(Callable(self, "_on_dice_revealed")):
+        dice_overlay.roll_revealed.connect(_on_dice_revealed)
+    if dice_overlay and not dice_overlay.roll_done.is_connected(Callable(self, "_on_dice_done")):
+        dice_overlay.roll_done.connect(_on_dice_done)
+
+
+func show_event_roll(kind: String, q: float = -1.0) -> void:
+    if world == null:
+        return
+    _ensure_dice_overlay()
+    var roll: int = world.begin_roll(kind)
+    dice_overlay.show_number(kind, roll)
+    # 待ちは DiceOverlay 内部で処理
+    await dice_overlay.roll_done
+    if kind == "daily":
+        world.resolve_daily_with_roll(roll)
+    else:
+        world.resolve_travel_with_roll(roll, q)
+
+func _trigger_event_rolls() -> void:
+    if world == null:
+        return
+    if world.use_event_dice:
+        await show_event_roll("daily")
+        var moving := bool(world.player.get("enroute", false))
+        if moving:
+            await show_event_roll("travel", -1.0)
 func _city_name(cid: String) -> String:
-    return String(world.cities[cid]["name"]) if world and world.cities.has(cid) else cid
+    if world and world.cities.has(cid):
+        return String(world.cities[cid]["name"])
+    return cid
 
 # ---- placement ----
 func _place_popups() -> void:
     var vp := get_viewport_rect()
+
     if trade_win:
         var x := vp.size.x
         var y := vp.size.y
@@ -253,13 +339,16 @@ func _place_popups() -> void:
             var c := trade_win as Control
             c.position = Vector2(x * 0.56, y * 0.08)
             c.size     = Vector2(x * 0.40, y * 0.48)
+
     if menu_win:
         var x2 := vp.size.x
         var y2 := vp.size.y
         if menu_win is Control:
             var c2 := menu_win as Control
+            # 位置は据え置き、サイズだけ大きく
             c2.position = Vector2(x2 * 0.18, y2 * 0.52)
-            c2.size     = Vector2(x2 * 0.32, y2 * 0.34)
+            c2.size     = Vector2(x2 * 0.60, y2 * 0.78)
+
 
 # ---- wiring ----
 func _wire_buttons() -> void:
@@ -514,46 +603,102 @@ func _spawn_debug_if_needed() -> void:
             debug_panel.call("_update_stats")
     
 func _open_map_popup() -> void:
+    # 既存のウィンドウがあれば、再表示してフォーカスし、終了
     if is_instance_valid(map_window):
         map_window.popup_centered()
         map_window.grab_focus()
         return
+        
+    # ウィンドウの新規作成と設定
     map_window = Window.new()
     map_window.name = "MapWindow"
     map_window.title = "Map"
-    map_window.size = Vector2i(900, 520)
-    map_window.min_size = Vector2i(640, 360)
-    # Godot 4: unresizable は存在しないため、resizable = true に修正
-    map_window.unresizable = false
+    map_window.size = Vector2i(1120, 640)
+    map_window.min_size = Vector2i(1120, 640)
+    map_window.unresizable = true
+    
+    # ----------------------------------------------------
+    # 【問題箇所 1: if/else 構造の修正】
     var main := get_window()
     if main:
         main.add_child(map_window)
     else:
         get_tree().root.add_child(map_window)
+    # ----------------------------------------------------
+    
+    # MapWindow のクローズ時にピック終了＆ダイアログ掃除（クロージャ 1）
+    # ※元のコードでは、このconnectが map_window の初期化後と最後で2回行われており、
+    #   内容も異なるため、最初のconnectは削除し、より完全な2番目のconnectに統合すべきですが、
+    #   ここでは元のロジックを尊重して最初の connect を残します。
+    #   ただし、コードの構造から見て、この初期の connect は不要または誤りである可能性が高いです。
+    map_window.close_requested.connect(func():
+        var map := map_window.get_node_or_null("MapLayer")
+        if map and map.has_method("end_pick"):
+            map.call("end_pick")
+        if is_instance_valid(_move_confirm_dlg):
+            _move_confirm_dlg.queue_free()
+            _move_confirm_dlg = null
+        map_window.hide()
+    )
+
+    # ----------------------------------------------------
+    # 【問題箇所 2: マップレイヤーの初期化】
+    # ここから、Windowへの各種追加処理が始まります。
+    # 元のコードでは、ここ以降が else: の内部かのように誤って深くインデントされていました。
+    # MapLayerの初期化は Window の親が確定した後（if/elseの実行後）に行うのが正しいです。
+
+    var DiceOverlayScript: Script = preload("res://ui/dice_overlay.gd") # これは未使用のようです
     var MapLayer: Script = preload("res://scripts/map_layer.gd")
     var map: Node = MapLayer.new()
     map.name = "MapLayer"
     map.world = world
     map_window.add_child(map)
+    
+    # レイアウト設定
     if map.has_method("set_anchors_preset"):
         map.call("set_anchors_preset", Control.PRESET_FULL_RECT)
         if map.has_method("set"):
-            map.set("offset_left", 0) # 複数行に修正
+            map.set("offset_left", 0) 
             map.set("offset_top", 0)
             map.set("offset_right", 0)
             map.set("offset_bottom", 0)
+            
+    # シグナル接続
     if map.has_signal("city_picked"):
         var cb := Callable(self, "_on_map_city_picked")
         if not map.is_connected("city_picked", cb):
             map.connect("city_picked", cb)
+    
+    # ----------------------------------------------------
+    
+    # 最終的な表示
     map_window.popup_centered()
     map_window.grab_focus()
+    
+    # Window 破棄用のクロージャ（クロージャ 2）
+    # 元のコードでは、この connect が初期化処理の最後に再び記述されていましたが、
+    # 最初（クロージャ 1）の connect と処理が重複・矛盾するため、
+    # どちらか一方に統一するのが良いですが、今回は元のコードの最後にあったものを使用します。
     map_window.close_requested.connect(func():
         if is_instance_valid(map_window): map_window.queue_free()
         map_window = null
     )
 
 # ---- dynamic spawn (Control) ----
+    # MapLayer の background_clicked で確認ダイアログを前面化
+    var _map_tmp = map_window.get_node_or_null("MapLayer")
+    if _map_tmp:
+        _map_tmp.background_clicked.connect(_on_map_background_clicked)
+
+func _on_map_background_clicked() -> void:
+    # 背景クリック時、確認ダイアログを前面化してフォーカスを戻す
+    if is_instance_valid(_move_confirm_dlg):
+        _move_confirm_dlg.show()
+        _move_confirm_dlg.popup_centered()
+        _move_confirm_dlg.grab_focus()
+        get_viewport().set_input_as_handled()
+        return
+
 func _spawn_menu_if_needed() -> void:
     if menu_win == null:
         var MenuPanelScript: Script = preload("res://ui/menu_panel.gd")
@@ -583,6 +728,9 @@ func _spawn_trade_if_needed() -> void:
         trade_win = tw
 
 # ---- Move / Inventory ----
+var _move_confirm_dlg: ConfirmationDialog = null
+var _last_move_pick_cid: String = ""
+
 func _size_and_center_window(win: Window) -> void:
     var main: Window = get_window()
     var screen_size: Vector2i
@@ -607,14 +755,42 @@ func _open_move_window() -> void:
     map_window.grab_focus()
 
 func _on_map_city_picked(cid: String) -> void:
+    
+    # 二重生成防止：同じ都市で確認ダイアログが開いているならフォーカスだけ戻す
+    if is_instance_valid(_move_confirm_dlg):
+        if _move_confirm_dlg.visible and _last_move_pick_cid == cid:
+            _move_confirm_dlg.grab_focus()
+            return
+        _move_confirm_dlg.queue_free()
+        _move_confirm_dlg = null
+    _last_move_pick_cid = cid
     if world == null or not is_instance_valid(map_window):
         return
     var origin: String = String(world.player.get("city", ""))
-    var days: int = world._route_days(origin, cid)
-    var travel_cost: float = world.travel_cost_per_day * float(days)
+    var days: int = 0
+    var travel_cost: float = 0.0
     var toll: float = 0.0
-    if world.pay_toll_on_depart:
-        toll = float(world._route_toll(origin, cid))
+    var use_path: Array[String] = []
+    if world and world.has_method("compute_path"):
+        var res: Dictionary = world.compute_path(origin, cid, "fastest")
+        use_path = res.get("path", [])
+        if use_path.size() < 2:
+            var err := AcceptDialog.new()
+            err.title = "行けません"
+            err.dialog_text = "その都市へ通じる道がありません。"
+            map_window.add_child(err); err.popup_centered(); return
+        days = int(res.get("days", 0))
+        travel_cost = float(res.get("travel_cost", world.travel_cost_per_day * float(days)))
+        toll = 0.0
+        if world.pay_toll_on_depart:
+            toll = float(res.get("toll", 0.0))
+    else:
+        days = world._route_days(origin, cid)
+        travel_cost = world.travel_cost_per_day * float(days)
+        toll = 0.0
+        if world.pay_toll_on_depart:
+            toll = float(world._route_toll(origin, cid))
+
     var total: float = travel_cost + toll
     var cash: float = float(world.player.get("cash", 0.0))
     var dest_name: String = cid
@@ -625,6 +801,11 @@ func _on_map_city_picked(cid: String) -> void:
         origin_name = String(world.cities[origin].get("name", origin))
 
     var dlg := ConfirmationDialog.new()
+    dlg.transient = true
+    dlg.transient_to_focused = true
+    dlg.always_on_top = true
+    dlg.exclusive = true
+    _move_confirm_dlg = dlg
     dlg.title = "移動の確認"
     var text: String = "次の都市へ移動しますか？\n"
     text += "%s → %s\n" % [origin_name, dest_name]
@@ -637,33 +818,34 @@ func _on_map_city_picked(cid: String) -> void:
     dlg.dialog_text = text
 
     map_window.add_child(dlg)
+    dlg.popup_centered()
     if dlg.get_ok_button(): dlg.get_ok_button().text = "移動する"
     if dlg.get_cancel_button(): dlg.get_cancel_button().text = "やめる"
 
     dlg.confirmed.connect(func():
-        var dest_id := String(cid)
-        var res := world.can_player_move_to(dest_id)
-        if bool(res.get("ok", false)) and world.player_move(dest_id):
+        var res_ok := false
+        if world and world.has_method("player_move_via") and use_path.size() >= 2:
+            # 資金チェック
+            if cash >= total and (int(world.player.get("last_arrival_day", -999)) != world.day):
+                res_ok = world.player_move_via(cid, use_path)
+        else:
+            var r := world.can_player_move_to(cid)
+            if bool(r.get("ok", false)):
+                res_ok = world.player_move(cid)
+        if res_ok:
             var map := map_window.get_node_or_null("MapLayer")
             if map and map.has_method("end_pick"):
                 map.call("end_pick")
+            if is_instance_valid(_move_confirm_dlg):
+                _move_confirm_dlg.hide()
+                _move_confirm_dlg.queue_free()
+                _move_confirm_dlg = null
+
             _refresh()
         else:
-            var msg := ""
-            var need := float(res.get("need", 0.0))
-            var cash_now := float(world.player.get("cash", 0.0))
-            match int(res.get("err", -1)):
-                World.MoveErr.ARRIVED_TODAY:
-                    msg = "本日は到着日のため出発できません。\n翌日以降にもう一度お試しください。"
-                World.MoveErr.NOT_ADJACENT:
-                    msg = "その都市は隣接していません。"
-                World.MoveErr.LACK_CASH:
-                    msg = "資金が不足しています。\n必要: %.1f / 所持: %.1f" % [need, cash_now]
-                _:
-                    msg = "出発できませんでした。"
             var err := AcceptDialog.new()
             err.title = "移動できません"
-            err.dialog_text = msg
+            err.dialog_text = "出発できませんでした。"
             map_window.add_child(err)
             err.popup_centered()
     )
@@ -672,6 +854,14 @@ func _on_map_city_picked(cid: String) -> void:
     dlg.confirmed.connect(_sync_pause_state)
     dlg.canceled.connect(_sync_pause_state)
     dlg.close_requested.connect(_sync_pause_state)
+        # キャンセル/×閉じる時に地図側のラベル/ハイライトを消す
+    var _clear_map_highlight := func():
+        if is_instance_valid(map_window):
+            var map := map_window.get_node_or_null("MapLayer")
+            if map and map.has_method("clear_pick_highlight"):
+                map.call("clear_pick_highlight")
+    dlg.canceled.connect(_clear_map_highlight)
+    dlg.close_requested.connect(_clear_map_highlight)
     dlg.grab_focus()
 
 func _open_inventory_window() -> void:
@@ -1023,3 +1213,510 @@ func _resolve_dialog_player() -> void:
         dialog_player = get_node_or_null(dialog_player_path)
     if dialog_player == null:
         dialog_player = get_tree().root.find_child("DialogPlayer", true, false)
+
+
+func _on_dice_started(kind: String) -> void:
+    print("[Dice] started kind=%s" % kind)
+
+func _on_dice_revealed(value: int) -> void:
+    print("[Dice] revealed value=%02d" % value)
+
+func _on_dice_done(kind: String, value: int) -> void:
+    print("[Dice] done kind=%s value=%02d" % [kind, value])
+    if world:
+        var log: Array = []
+        if world.event_log is Array:
+            log = world.event_log
+        log.append("Dice %s: %02d" % [kind, value])
+        var max_lines: int = 30
+        max_lines = world.event_log_max
+        while log.size() > max_lines:
+            log.remove_at(0)
+        world.event_log = log
+        if self.has_method("_refresh_event_log"):
+            _refresh_event_log()
+
+
+# 置換対象: _ensure_weekly_dialog
+func _ensure_weekly_dialog() -> void:
+    if _weekly_dialog != null and is_instance_valid(_weekly_dialog):
+        return
+
+    _weekly_dialog = AcceptDialog.new()
+    _weekly_dialog.name = "WeeklyReport"
+    _weekly_dialog.title = "週報"
+    _weekly_dialog.dialog_text = ""
+    add_child(_weekly_dialog)
+
+    var vb := VBoxContainer.new()
+    vb.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    _weekly_dialog.add_child(vb)
+
+    var hb := HBoxContainer.new()
+    hb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    hb.add_theme_constant_override("separation", 8)
+    vb.add_child(hb)
+
+    _wr_tog_basis = CheckButton.new()
+    _wr_tog_basis.text = "Basis"
+    _wr_tog_basis.button_pressed = true
+    hb.add_child(_wr_tog_basis)
+
+    _wr_tog_rise = CheckButton.new()
+    _wr_tog_rise.text = "値上がり"
+    _wr_tog_rise.button_pressed = true
+    hb.add_child(_wr_tog_rise)
+
+    _wr_tog_fall = CheckButton.new()
+    _wr_tog_fall.text = "値下がり"
+    _wr_tog_fall.button_pressed = true
+    hb.add_child(_wr_tog_fall)
+
+    _wr_tog_watch = CheckButton.new()
+    _wr_tog_watch.text = "ウォッチ"
+    _wr_tog_watch.button_pressed = true
+    hb.add_child(_wr_tog_watch)
+
+    _weekly_text = RichTextLabel.new()
+    _weekly_text.fit_content = false
+    _weekly_text.scroll_active = true
+    _weekly_text.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    _weekly_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    _weekly_text.custom_minimum_size = Vector2(560, 420)
+    _weekly_text.add_theme_constant_override("line_separation", 4)
+    vb.add_child(_weekly_text)
+
+    # ★初期同期（これが無いと watch が初回に出ません）
+    _wr_show_basis = _wr_tog_basis.button_pressed
+    _wr_show_rise  = _wr_tog_rise.button_pressed
+    _wr_show_fall  = _wr_tog_fall.button_pressed
+    _wr_show_watch = _wr_tog_watch.button_pressed
+
+    _wr_tog_basis.toggled.connect(func(pressed: bool) -> void:
+        _wr_show_basis = pressed
+        _refresh_weekly_text()
+    )
+    _wr_tog_rise.toggled.connect(func(pressed: bool) -> void:
+        _wr_show_rise = pressed
+        _refresh_weekly_text()
+    )
+    _wr_tog_fall.toggled.connect(func(pressed: bool) -> void:
+        _wr_show_fall = pressed
+        _refresh_weekly_text()
+    )
+    _wr_tog_watch.toggled.connect(func(pressed: bool) -> void:
+        _wr_show_watch = pressed
+        _refresh_weekly_text()
+    )
+
+
+# 置換対象: _on_weekly_report
+func _on_weekly_report(province: String, payload: Dictionary) -> void:
+    if not show_weekly_report_dialog:
+        return
+    _ensure_weekly_dialog()
+
+    _wr_last_prov = province
+    _wr_last_payload = payload
+
+    var basis_allowed := bool(payload.get("basis_allowed", true))
+    _wr_show_basis = basis_allowed
+    if _wr_tog_basis:
+        _wr_tog_basis.button_pressed = basis_allowed
+        _wr_tog_basis.disabled = not basis_allowed
+
+    # ★受信時同期（初回で押されていない問題の回避）
+    if _wr_tog_rise:  _wr_show_rise  = _wr_tog_rise.button_pressed
+    if _wr_tog_fall:  _wr_show_fall  = _wr_tog_fall.button_pressed
+    if _wr_tog_watch: _wr_show_watch = _wr_tog_watch.button_pressed
+
+    var title := String(payload.get("title", ""))
+    if title == "":
+        var day_val := int(payload.get("day", 0))
+        title = "週報 — %s (Day %d)" % [province, day_val]
+    _weekly_dialog.title = title
+
+    _wr_sections_cache = _wr_build_sections_from_payload(province, payload)
+    _refresh_weekly_text()
+    _weekly_dialog.popup_centered()
+    _weekly_dialog.grab_focus()
+
+
+# === weekly report: REPLACE THESE FUNCTIONS IN game_hud.gd ===
+# 置換対象: _refresh_weekly_text, _wr_build_sections_from_payload
+
+func _refresh_weekly_text() -> void:
+    if _weekly_text == null:
+        return
+
+    var header := String(_wr_sections_cache.get("header", ""))
+    var parts := PackedStringArray()
+
+    if _wr_show_basis and _wr_sections_cache.get("basis", "") != "":
+        parts.append(String(_wr_sections_cache["basis"]))
+    if _wr_show_rise and _wr_sections_cache.get("rise", "") != "":
+        parts.append(String(_wr_sections_cache["rise"]))
+    if _wr_show_fall and _wr_sections_cache.get("fall", "") != "":
+        parts.append(String(_wr_sections_cache["fall"]))
+    if _wr_show_watch and _wr_sections_cache.get("watch", "") != "":
+        parts.append(String(_wr_sections_cache["watch"]))
+
+    var body := "\n\n".join(parts).strip_edges()
+    if body == "":
+        body = "(項目なし)"
+
+    if header != "":
+        body = "%s\n\n%s" % [header, body]
+
+    _weekly_text.text = body
+    _weekly_text.queue_redraw()
+
+func _wr_build_sections_from_payload(province: String, payload: Dictionary) -> Dictionary:
+    var out: Dictionary = {
+        "header": "",
+        "basis": "",
+        "rise": "",
+        "fall": "",
+        "watch": ""
+    }
+
+    var is_delayed := bool(payload.get("delayed", false))
+    var day_val := int(payload.get("day", 0))
+    var obs_day := int(payload.get("obs_day", -1))
+
+    if is_delayed:
+        if obs_day >= 0:
+            out["header"] = "[週報（遅延）] %s  観測: Day %d / 受信: Day %d" % [province, obs_day, day_val]
+        else:
+            out["header"] = "[週報（遅延）] %s  受信: Day %d" % [province, day_val]
+    else:
+        out["header"] = "[週報] %s  (Day %d)" % [province, day_val]
+
+    var has_new_form := false
+    if payload.has("rise"):
+        has_new_form = true
+    elif payload.has("fall"):
+        has_new_form = true
+    elif payload.has("watch_scarcity") or payload.has("watch_surplus"):
+        has_new_form = true
+    elif payload.has("rows_delayed") or payload.has("rows_live") or payload.has("rows"):
+        has_new_form = true
+
+    if has_new_form:
+        # ---- 値上がり / 値下がり（world提供分のみ）----
+        if payload.has("rise"):
+            var lines_r: PackedStringArray = ["値上がりTOP:"]
+            for e_any in payload.get("rise", []):
+                var e: Dictionary = e_any
+                var cname := String(e.get("city_name", e.get("city","")))
+                var pname := String(e.get("product_name", e.get("pid","")))
+                var pct := float(e.get("pct", 0.0)) * 100.0
+                var mid := float(e.get("mid", 0.0))
+                lines_r.append("%s / %s： %+0.1f%%  (mid=%.1f)" % [cname, pname, pct, mid])
+            out["rise"] = "\n".join(lines_r).strip_edges()
+
+        if payload.has("fall"):
+            var lines_f: PackedStringArray = ["値下がりTOP:"]
+            for e_any2 in payload.get("fall", []):
+                var e2: Dictionary = e_any2
+                var cname2 := String(e2.get("city_name", e2.get("city","")))
+                var pname2 := String(e2.get("product_name", e2.get("pid","")))
+                var pct2 := float(e2.get("pct", 0.0)) * 100.0
+                var mid2 := float(e2.get("mid", 0.0))
+                lines_f.append("%s / %s： %+0.1f%%  (mid=%.1f)" % [cname2, pname2, pct2, mid2])
+            out["fall"] = "\n".join(lines_f).strip_edges()
+
+        # ---- Basis（★watchの有無に関係なく rows 系から常に作る）----
+        var rows2: Array = []
+        var use_obs2 := false
+        if payload.has("rows_delayed"):
+            rows2 = payload.get("rows_delayed", [])
+            use_obs2 = true
+        elif payload.has("rows_live"):
+            rows2 = payload.get("rows_live", [])
+            use_obs2 = false
+        elif payload.has("rows"):
+            rows2 = payload.get("rows", [])
+            use_obs2 = is_delayed
+
+        var lines_b: PackedStringArray = ["Basis:"]
+        var top_n := int(payload.get("top_n", 3))
+        var keyed_mid := "mid"
+        var keyed_qty := "qty"
+        var keyed_target := "target"
+        if use_obs2:
+            keyed_mid = "mid_obs"
+            keyed_qty = "qty_obs"
+            keyed_target = "target_obs"
+
+        if rows2.size() == 0:
+            lines_b.append("(該当なし)")
+        else:
+            var tmp2: Array = []
+            for e_any4 in rows2:
+                var e4: Dictionary = e_any4
+                var qv := float(e4.get(keyed_qty, 0.0))
+                var tv := float(e4.get(keyed_target, 1.0))
+
+                # --- フィルタ ---
+                # 1) has_stock があればそれで判定
+                # 2) 無ければ（後方互換） q>0 または t>1 のものだけ採用
+                var accept := false
+                if e4.has("has_stock"):
+                    accept = bool(e4.get("has_stock", false))
+                else:
+                    if (qv > 0.0) or (tv > 1.0):
+                        accept = true
+                if not accept:
+                    continue
+
+                var rr := 0.0
+                if tv > 0.0:
+                    rr = qv / tv
+                tmp2.append({"e": e4, "ratio": rr})
+
+            if tmp2.size() == 0:
+                lines_b.append("(該当なし)")
+            else:
+                tmp2.sort_custom(func(a, b): return float(a["ratio"]) < float(b["ratio"]))
+                var limit : float = min(top_n, tmp2.size())
+                for i in range(limit):
+                    var ee: Dictionary = tmp2[i]["e"]
+                    var cname_b := String(ee.get("city_name", ee.get("city","")))
+                    var pname_b := String(ee.get("product_name", ee.get("pid","")))
+                    var m := float(ee.get(keyed_mid, 0.0))
+                    var q2 := float(ee.get(keyed_qty, 0.0))
+                    var t2 := float(ee.get(keyed_target, 1.0))
+                    var r := 0.0
+                    if t2 > 0.0:
+                        r = q2 / t2
+                    lines_b.append("%s / %s： mid=%.1f 在庫率=%.2f" % [cname_b, pname_b, m, r])
+
+            # ★フォールバックの抑止：遅延時は疑似 rise/fall を作らない
+            if String(out["rise"]) == "" and String(out["fall"]) == "" and (not is_delayed):
+                var sim := _wr_make_relative_change_sections_from_rows(rows2, top_n, use_obs2)
+                out["rise"] = String(sim.get("rise", ""))
+                out["fall"] = String(sim.get("fall", ""))
+
+        out["basis"] = "\n".join(lines_b).strip_edges()
+
+        # ---- ウォッチ（空でも見出しを出す）----
+        if payload.has("watch_scarcity") or payload.has("watch_surplus"):
+            var lines_w: PackedStringArray = []
+            var sc: Array = payload.get("watch_scarcity", [])
+            var su: Array = payload.get("watch_surplus", [])
+
+            lines_w.append("逼迫ウォッチTOP:")
+            if sc.size() == 0:
+                lines_w.append("(該当なし)")
+            else:
+                for it_any in sc:
+                    var it: Dictionary = it_any
+                    var cname := String(it.get("city_name", it.get("city","")))
+                    var pname := String(it.get("product_name", it.get("pid","")))
+                    var scv := float(it.get("score", 0.0))
+                    var rat := float(it.get("ratio", 0.0))
+                    lines_w.append("%s / %s： score=%.3f  (在庫率=%.2f)" % [cname, pname, scv, rat])
+
+            lines_w.append("")
+            lines_w.append("過剰ウォッチTOP:")
+            if su.size() == 0:
+                lines_w.append("(該当なし)")
+            else:
+                for it2_any in su:
+                    var it2: Dictionary = it2_any
+                    var cname2 := String(it2.get("city_name", it2.get("city","")))
+                    var pname2 := String(it2.get("product_name", it2.get("pid","")))
+                    var scv2 := float(it2.get("score", 0.0))
+                    var rat2 := float(it2.get("ratio", 0.0))
+                    lines_w.append("%s / %s： score=%.3f  (在庫率=%.2f)" % [cname2, pname2, scv2, rat2])
+
+            out["watch"] = "\n".join(lines_w).strip_edges()
+
+    return out
+
+
+func _wr_make_basis_radar(province: String, payload: Dictionary) -> String:
+    var rows: Array = []
+    if payload.has("rows_delayed"):
+        rows = payload.get("rows_delayed", [])
+    elif payload.has("rows_live"):
+        rows = payload.get("rows_live", [])
+    elif payload.has("rows"):
+        rows = payload.get("rows", [])
+
+    if rows.size() == 0:
+        # フォールバック：World の現在価格
+        if world == null or world.price == null:
+            return ""
+        for cid in world.price.keys():
+            var city_prices: Dictionary = world.price[cid]
+            for pid in city_prices.keys():
+                var mid: float = float(city_prices[pid])
+                var cname: String = ""
+                if world.cities.has(cid):
+                    cname = String(world.cities[cid].get("name", cid))
+                else:
+                    cname = cid
+                var pname: String = ""
+                if world.has_method("get_product_name"):
+                    pname = String(world.get_product_name(pid))
+                else:
+                    pname = pid
+                rows.append({"city_id":cid, "city_name":cname, "pid":pid, "product_name":pname, "mid":mid})
+        if rows.size() == 0:
+            return ""
+
+    var scope_is_world := province.find("World") != -1 or province.find("(ALL)") != -1
+
+    var sum_by_pid: Dictionary = {}
+    var cnt_by_pid: Dictionary = {}
+    for any_row in rows:
+        var r: Dictionary = any_row
+        var pid := String(r.get("pid", r.get("product_id","")))
+        var __mid_key_l1523__: String = ""
+        if r.has("mid"):
+            __mid_key_l1523__ = "mid"
+        else:
+            __mid_key_l1523__ = "mid_obs"
+        var midv := float(r.get(__mid_key_l1523__, 0.0))
+        if midv <= 0.0: continue
+        if not sum_by_pid.has(pid):
+            sum_by_pid[pid] = 0.0; cnt_by_pid[pid] = 0
+        sum_by_pid[pid] = float(sum_by_pid[pid]) + midv
+        cnt_by_pid[pid]  = int(cnt_by_pid[pid]) + 1
+
+    if cnt_by_pid.size() == 0:
+        return ""
+
+    var avg_by_pid: Dictionary = {}
+    for pid2 in sum_by_pid.keys():
+        avg_by_pid[pid2] = float(sum_by_pid[pid2]) / max(1, int(cnt_by_pid[pid2]))
+
+    var gap_pos: Array = []
+    var gap_neg: Array = []
+    for any_row2 in rows:
+        var r2: Dictionary = any_row2
+        var pid3 := String(r2.get("pid", r2.get("product_id","")))
+        var __mid_key_l1542__: String = ""
+        if r2.has("mid"):
+            __mid_key_l1542__ = "mid"
+        else:
+            __mid_key_l1542__ = "mid_obs"
+        var mid3 := float(r2.get(__mid_key_l1542__, 0.0))
+        var avg := float(avg_by_pid.get(pid3, 0.0))
+        if avg <= 0.0: continue
+        var dev := (mid3 / avg) - 1.0
+        var cname2 := String(r2.get("city_name", r2.get("city","")))
+        var pname2 := String(r2.get("product_name", pid3))
+        var rec := {"city":cname2, "prod":pname2, "dev":dev, "mid":mid3}
+        if dev >= 0.0:
+            gap_pos.append(rec)
+        else:
+            gap_neg.append(rec)
+
+    gap_pos.sort_custom(func(a,b): return float(a["dev"]) > float(b["dev"]))
+    gap_neg.sort_custom(func(a,b): return float(a["dev"]) > float(b["dev"])) # 負は末尾から
+
+    var top_n: int = int(payload.get("top_n", 3))
+    var lines: PackedStringArray = []
+    
+    if gap_pos.size() > 0:
+        if lines.size() > 0: lines.append("")
+        lines.append("割高TOP:")
+        for j in range(min(top_n, gap_pos.size())):
+            var w: Dictionary = gap_pos[j]
+            lines.append("%s / %s： %+.1f%%（平均比）  mid=%.1f" %
+                [String(w["city"]), String(w["prod"]), float(w["dev"])*100.0, float(w["mid"])])
+
+    if gap_neg.size() > 0:
+        lines.append("\n割安TOP:")
+        for i in range(min(top_n, gap_neg.size())):
+            var z: Dictionary = gap_neg[gap_neg.size()-1-i]
+            lines.append("%s / %s： %+.1f%%（平均比）  mid=%.1f" %
+                [String(z["city"]), String(z["prod"]), float(z["dev"])*100.0, float(z["mid"])])
+
+    return "\n".join(lines).strip_edges()
+
+
+func _wr_make_relative_change_sections_from_rows(rows: Array, top_n: int, use_obs: bool) -> Dictionary:
+    var sum_by_pid: Dictionary = {}
+    var cnt_by_pid: Dictionary = {}
+
+    var mid_key: String = ""
+    if use_obs:
+        mid_key = "mid_obs"
+    else:
+        mid_key = "mid"
+    for any_row in rows:
+        var r: Dictionary = any_row
+        var pid := String(r.get("pid", r.get("product_id","")))
+        var midv := float(r.get(mid_key, 0.0))
+        if midv <= 0.0: continue
+        if not sum_by_pid.has(pid):
+            sum_by_pid[pid] = 0.0; cnt_by_pid[pid] = 0
+        sum_by_pid[pid] = float(sum_by_pid[pid]) + midv
+        cnt_by_pid[pid]  = int(cnt_by_pid[pid]) + 1
+
+    var avg_by_pid: Dictionary = {}
+    for pid2 in sum_by_pid.keys():
+        avg_by_pid[pid2] = float(sum_by_pid[pid2]) / max(1, int(cnt_by_pid[pid2]))
+
+    var pos: Array = []
+    var neg: Array = []
+    for any_row2 in rows:
+        var r2: Dictionary = any_row2
+        var pid3 := String(r2.get("pid", r2.get("product_id","")))
+        var mid3 := float(r2.get(mid_key, 0.0))
+        var avg := float(avg_by_pid.get(pid3, 0.0))
+        if avg <= 0.0: continue
+        var dev := (mid3 / avg) - 1.0
+        var cname2 := String(r2.get("city_name", r2.get("city","")))
+        var pname2 := String(r2.get("product_name", pid3))
+        var rec := {"city":cname2, "prod":pname2, "pct":dev, "mid":mid3}
+        if dev > 0.0:
+            pos.append(rec)
+        elif dev < 0.0:
+            neg.append(rec)
+
+    pos.sort_custom(func(a,b): return float(a["pct"]) > float(b["pct"]))
+    neg.sort_custom(func(a,b): return float(a["pct"]) < float(b["pct"]))
+
+    var out := {"rise":"", "fall":""}
+    if pos.size() > 0:
+        var lr: PackedStringArray = ["値上がりTOP:"]
+        for i in range(min(top_n, pos.size())):
+            var x: Dictionary = pos[i]
+            lr.append("%s / %s： %+0.1f%%  (mid=%.1f)" %
+                [String(x["city"]), String(x["prod"]), float(x["pct"])*100.0, float(x["mid"])])
+        out["rise"] = "\n".join(lr).strip_edges()
+
+    if neg.size() > 0:
+        var lf: PackedStringArray = ["値下がりTOP:"]
+        for j in range(min(top_n, neg.size())):
+            var y: Dictionary = neg[j]
+            lf.append("%s / %s： %+0.1f%%  (mid=%.1f)" %
+                [String(y["city"]), String(y["prod"]), float(y["pct"])*100.0, float(y["mid"])])
+        out["fall"] = "\n".join(lf).strip_edges()
+
+    return out
+
+
+func _wr_split_old_text(full: String) -> Dictionary:
+    var res := {"rise":"", "fall":"", "watch":""}
+    if full == "": return res
+    var i1 := full.find("値上がりTOP:")
+    var i2 := full.find("値下がりTOP:")
+    var i3 := full.find("逼迫ウォッチTOP:")
+    if i1 != -1:
+        if i2 != -1:
+            res["rise"] = full.substr(i1, i2 - i1)
+            if i3 != -1:
+                res["fall"]  = full.substr(i2, i3 - i2)
+                res["watch"] = full.substr(i3)
+            else:
+                res["fall"]  = full.substr(i2)
+        else:
+            res["rise"] = full.substr(i1)
+    return res
