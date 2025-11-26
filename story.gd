@@ -10,6 +10,9 @@ var dialog_player: DialogPlayer = null
 var dialog_ui: Dialog = null
 var _overlay_active: bool = false
 var _resume_info: Dictionary = {} # {"id":String, "seq":int}
+var _pending_system_msg: String = ""
+var _pending_resume_id: String = ""
+var _pending_resume_seq: int = -1
 
 
 # プロローグ進行状態
@@ -153,8 +156,33 @@ func _on_dialog_finished() -> void:
             _running_prologue = true
             dialog_player.play_from_seq(resume_id, resume_seq)
         return
+    if not _running_prologue:
+        return
+    if _current_story_id == "":
+        return
 
+    var just_id := _current_story_id
+    _current_story_id = ""
 
+    match just_id:
+        "prologue_1":
+            _after_prologue_1()
+            prologue_step = 1
+        "prologue_5":
+            _after_prologue_5()
+            prologue_step = 2
+        "prologue_10":
+            _after_prologue_10()
+            prologue_step = 3
+        "prologue_15":
+            _after_prologue_15()
+            prologue_step = 4
+            _finish_prologue()
+            return
+        _:
+            pass
+
+    _play_next_prologue()
 
 func _finish_prologue() -> void:
     prologue_done = true
@@ -220,6 +248,38 @@ func _after_prologue_15() -> void:
     # Durton 帰宅後、父親と対話して「行商人になる」決意が固まる場面
     _notify_world("父親に代役を認められ、行商人としての一歩を踏み出した。")
 
+func _on_dialog_line_started_v2(id: String, seq: int, row: Dictionary) -> void:
+    if _maybe_start_pending_overlay(id, seq):
+        return
+    if id == "prologue_1" and seq == 60:
+        _on_prologue_1_seq_60_v2(row)
+
+func _on_prologue_1_seq_60_v2(row: Dictionary) -> void:
+    if world and world.has_method("give_key_item"):
+        world.give_key_item("guild_permit_father", 1)
+    if _pending_system_msg == "":
+        _pending_system_msg = "父親のギルド許可証を手に入れた"
+        _pending_resume_id = _current_story_id
+        _pending_resume_seq = 65
+
+func _maybe_start_pending_overlay(id: String, seq: int) -> bool:
+    if _pending_system_msg == "":
+        return false
+    if id != _pending_resume_id:
+        return false
+    if seq < _pending_resume_seq:
+        return false
+
+    _overlay_active = true
+    _resume_info = {"id": _pending_resume_id, "seq": _pending_resume_seq}
+    _pending_resume_id = ""
+    _pending_resume_seq = -1
+    var msg := _pending_system_msg
+    _pending_system_msg = ""
+    _current_story_id = ""
+    call_deferred("_show_system_message", msg)
+    return true
+
 func _connect_dialog_triggers() -> void:
     # dialog_player を解決
     _resolve_dialog_player()
@@ -227,6 +287,6 @@ func _connect_dialog_triggers() -> void:
         return
 
     # 二重接続防止
-    var c := Callable(self, "_on_dialog_line_started")
+    var c := Callable(self, "_on_dialog_line_started_v2")
     if not dialog_player.line_started.is_connected(c):
         dialog_player.line_started.connect(c)
