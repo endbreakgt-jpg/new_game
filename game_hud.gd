@@ -9,6 +9,17 @@ var _test_dialog_done: bool = false
 
 var world: World
 
+# --- 自動移動（プレイヤー）用 ---
+var _auto_travel_timer: Timer = null
+var _auto_travel_active: bool = false
+var _auto_travel_total_days: int = 0
+var _auto_travel_elapsed_days: int = 0
+var _auto_travel_dest_city: String = ""
+var _auto_travel_prev_debug_skip: bool = false
+var _auto_travel_dialog_in_use: bool = false
+var _dialog_ui: Node = null
+
+
 # --- Weekly Report UI (collapsible sections) ---
 var _weekly_dialog: AcceptDialog = null
 var _weekly_text: RichTextLabel = null
@@ -47,6 +58,7 @@ var _active_toasts: int = 0  # 表示中トースト数（>0 で自動停止）
 var _user_paused: bool = true
 var _popup_paused: bool = false
 var play_btn: Button = null
+var story_btn: Button = null
 var debug_btn: Button = null
 
 
@@ -98,7 +110,7 @@ func _ready() -> void:
     _ensure_spacer_before_buttons()
 
     _create_play_button()
-    _create_debug_button()
+#    _create_debug_button()
     _create_supply_label()     # ★ 追加：当日供給数/今月累計の小さなピル
     _update_play_button()
 
@@ -187,6 +199,26 @@ func _create_play_button() -> void:
             topbar.move_child(play_btn, menu_btn.get_index())
     if play_btn and not play_btn.pressed.is_connected(Callable(self, "_on_play_pause_btn")):
         play_btn.pressed.connect(_on_play_pause_btn)
+
+func _create_story_button() -> void:
+    if not is_instance_valid(topbar):
+        return
+    var existing := topbar.get_node_or_null("StoryBtn")
+    if existing:
+        story_btn = existing as Button
+    else:
+        story_btn = Button.new()
+        story_btn.name = "StoryBtn"
+        story_btn.text = "Story"
+        story_btn.custom_minimum_size = Vector2(90, 32)
+        story_btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+        story_btn.mouse_filter = Control.MOUSE_FILTER_STOP
+        topbar.add_child(story_btn)
+        # Playボタンの直前に差し込む（レイアウトは好みで調整可）
+        if play_btn and story_btn.get_parent() == topbar:
+            topbar.move_child(story_btn, play_btn.get_index())
+    if story_btn and not story_btn.pressed.is_connected(Callable(self, "_on_story_btn")):
+        story_btn.pressed.connect(_on_story_btn)
 
 func _create_debug_button() -> void:
     if not is_instance_valid(topbar):
@@ -318,11 +350,21 @@ func show_event_roll(kind: String, q: float = -1.0) -> void:
 func _trigger_event_rolls() -> void:
     if world == null:
         return
-    if world.use_event_dice:
+    if not world.use_event_dice:
+        return
+
+    var moving := false
+    if world.player != null:
+        moving = bool(world.player.get("enroute", false))
+
+    if moving:
+        # 移動中は「移動イベントダイス」だけ振る
+        await show_event_roll("travel", -1.0)
+    else:
+        # 通常時は従来どおり日次イベントダイス
         await show_event_roll("daily")
-        var moving := bool(world.player.get("enroute", false))
-        if moving:
-            await show_event_roll("travel", -1.0)
+
+            
 func _city_name(cid: String) -> String:
     if world and world.cities.has(cid):
         return String(world.cities[cid]["name"])
@@ -352,6 +394,10 @@ func _place_popups() -> void:
 
 # ---- wiring ----
 func _wire_buttons() -> void:
+    # Storyボタンがシーンに無ければここで生成
+    if story_btn == null:
+        _create_story_button()
+
     if menu_btn and not menu_btn.pressed.is_connected(Callable(self, "_on_menu_btn")):
         menu_btn.pressed.connect(_on_menu_btn)
     if map_btn and not map_btn.pressed.is_connected(Callable(self, "_on_map_btn")):
@@ -360,6 +406,8 @@ func _wire_buttons() -> void:
         trade_btn.pressed.connect(_on_trade_btn)
     if play_btn and not play_btn.pressed.is_connected(Callable(self, "_on_play_pause_btn")):
         play_btn.pressed.connect(_on_play_pause_btn)
+    if story_btn and not story_btn.pressed.is_connected(Callable(self, "_on_story_btn")):
+        story_btn.pressed.connect(_on_story_btn)
     if debug_btn and not debug_btn.pressed.is_connected(Callable(self, "_on_debug_btn")):
         debug_btn.pressed.connect(_on_debug_btn)
 
@@ -382,6 +430,22 @@ func _on_trade_btn() -> void:
 
 func _on_map_btn() -> void:
     _open_map_popup()
+func _on_story_btn() -> void:
+    var tree := get_tree()
+    if tree == null:
+        return
+    var root := tree.root
+    if root == null:
+        return
+
+    # シーンツリー内から Story ノードを探して start_prologue() を呼ぶ
+    # ※ Storyノードの name を "Story" にしておくと分かりやすい
+    var story_node := root.find_child("Story", true, false)
+    if story_node != null and story_node.has_method("start_prologue"):
+        story_node.call("start_prologue")
+    else:
+        push_warning("GameHUD: Story ノード、または start_prologue() が見つかりませんでした。")
+
 
 func _on_debug_btn() -> void:
     _spawn_debug_if_needed()
@@ -602,13 +666,15 @@ func _spawn_debug_if_needed() -> void:
         if debug_panel.has_method("_update_stats"):
             debug_panel.call("_update_stats")
     
-func _open_map_popup() -> void:
-    # 既存のウィンドウがあれば、再表示してフォーカスし、終了
+func _open_map_popup(for_move: bool = false) -> void:
+    # 既にウィンドウがある場合は再利用
     if is_instance_valid(map_window):
+        if for_move:
+            _ensure_map_city_list_ui()
         map_window.popup_centered()
         map_window.grab_focus()
         return
-        
+
     # ウィンドウの新規作成と設定
     map_window = Window.new()
     map_window.name = "MapWindow"
@@ -616,88 +682,78 @@ func _open_map_popup() -> void:
     map_window.size = Vector2i(1120, 640)
     map_window.min_size = Vector2i(1120, 640)
     map_window.unresizable = true
-    
-    # ----------------------------------------------------
-    # 【問題箇所 1: if/else 構造の修正】
+
     var main := get_window()
     if main:
         main.add_child(map_window)
     else:
         get_tree().root.add_child(map_window)
-    # ----------------------------------------------------
-    
-    # MapWindow のクローズ時にピック終了＆ダイアログ掃除（クロージャ 1）
-    # ※元のコードでは、このconnectが map_window の初期化後と最後で2回行われており、
-    #   内容も異なるため、最初のconnectは削除し、より完全な2番目のconnectに統合すべきですが、
-    #   ここでは元のロジックを尊重して最初の connect を残します。
-    #   ただし、コードの構造から見て、この初期の connect は不要または誤りである可能性が高いです。
-    map_window.close_requested.connect(func():
-        var map := map_window.get_node_or_null("MapLayer")
-        if map and map.has_method("end_pick"):
-            map.call("end_pick")
-        if is_instance_valid(_move_confirm_dlg):
-            _move_confirm_dlg.queue_free()
-            _move_confirm_dlg = null
-        map_window.hide()
-    )
 
-    # ----------------------------------------------------
-    # 【問題箇所 2: マップレイヤーの初期化】
-    # ここから、Windowへの各種追加処理が始まります。
-    # 元のコードでは、ここ以降が else: の内部かのように誤って深くインデントされていました。
-    # MapLayerの初期化は Window の親が確定した後（if/elseの実行後）に行うのが正しいです。
-
-    var DiceOverlayScript: Script = preload("res://ui/dice_overlay.gd") # これは未使用のようです
-    var MapLayer: Script = preload("res://scripts/map_layer.gd")
-    var map: Node = MapLayer.new()
+    # MapLayer の追加
+    var DiceOverlayScript: Script = preload("res://ui/dice_overlay.gd") # これは未使用のようです（元コード踏襲）
+    var MapLayerScript: Script = preload("res://scripts/map_layer.gd")
+    var map: Node = MapLayerScript.new()
     map.name = "MapLayer"
     map.world = world
     map_window.add_child(map)
-    
-    # レイアウト設定
+
+    # レイアウト設定（元コード踏襲）
     if map.has_method("set_anchors_preset"):
         map.call("set_anchors_preset", Control.PRESET_FULL_RECT)
         if map.has_method("set"):
-            map.set("offset_left", 0) 
+            map.set("offset_left", 0)
             map.set("offset_top", 0)
             map.set("offset_right", 0)
             map.set("offset_bottom", 0)
-            
+
     # シグナル接続
     if map.has_signal("city_picked"):
         var cb := Callable(self, "_on_map_city_picked")
         if not map.is_connected("city_picked", cb):
             map.connect("city_picked", cb)
-    
-    # ----------------------------------------------------
-    
-    # 最終的な表示
+
+    if map.has_signal("background_clicked"):
+        var cb_bg := Callable(self, "_on_map_background_clicked")
+        if not map.is_connected("background_clicked", cb_bg):
+            map.connect("background_clicked", cb_bg)
+
+    # Move 経由で開いたときだけ都市一覧UIを用意
+    if for_move:
+        _ensure_map_city_list_ui()
+
     map_window.popup_centered()
     map_window.grab_focus()
-    
-    # Window 破棄用のクロージャ（クロージャ 2）
-    # 元のコードでは、この connect が初期化処理の最後に再び記述されていましたが、
-    # 最初（クロージャ 1）の connect と処理が重複・矛盾するため、
-    # どちらか一方に統一するのが良いですが、今回は元のコードの最後にあったものを使用します。
+
+    # 閉じるときの後片付け
     map_window.close_requested.connect(func():
-        if is_instance_valid(map_window): map_window.queue_free()
+        var m := map_window.get_node_or_null("MapLayer")
+        if m and m.has_method("end_pick"):
+            m.call("end_pick")
+        if is_instance_valid(_move_confirm_dlg):
+            _move_confirm_dlg.queue_free()
+            _move_confirm_dlg = null
+
+        _map_city_list_panel = null
+        _map_city_list_body = null
+
+        if is_instance_valid(map_window):
+            map_window.queue_free()
         map_window = null
     )
 
-# ---- dynamic spawn (Control) ----
-    # MapLayer の background_clicked で確認ダイアログを前面化
-    var _map_tmp = map_window.get_node_or_null("MapLayer")
-    if _map_tmp:
-        _map_tmp.background_clicked.connect(_on_map_background_clicked)
+
 
 func _on_map_background_clicked() -> void:
-    # 背景クリック時、確認ダイアログを前面化してフォーカスを戻す
-    if is_instance_valid(_move_confirm_dlg):
+    # 背景クリック時、まだ表示中の確認ダイアログがあれば前面化してフォーカスを戻す
+    if is_instance_valid(_move_confirm_dlg) and _move_confirm_dlg.visible:
         _move_confirm_dlg.show()
         _move_confirm_dlg.popup_centered()
         _move_confirm_dlg.grab_focus()
         get_viewport().set_input_as_handled()
         return
+
+    # 何も選択されていない場合は、特に何もしない（必要ならここで拡張）
+
 
 func _spawn_menu_if_needed() -> void:
     if menu_win == null:
@@ -731,6 +787,9 @@ func _spawn_trade_if_needed() -> void:
 var _move_confirm_dlg: ConfirmationDialog = null
 var _last_move_pick_cid: String = ""
 
+var _map_city_list_panel: PanelContainer = null
+var _map_city_list_body: VBoxContainer = null
+
 func _size_and_center_window(win: Window) -> void:
     var main: Window = get_window()
     var screen_size: Vector2i
@@ -743,7 +802,7 @@ func _size_and_center_window(win: Window) -> void:
     win.position = (screen_size - target) / 2
 
 func _open_move_window() -> void:
-    _open_map_popup()
+    _open_map_popup(true)  # ← Move 経由では一覧ボタン付きのモードで開く
     if not is_instance_valid(map_window):
         return
     var map := map_window.get_node_or_null("MapLayer")
@@ -754,8 +813,203 @@ func _open_move_window() -> void:
     map_window.popup_centered()
     map_window.grab_focus()
 
+func _ensure_map_city_list_ui() -> void:
+    if not is_instance_valid(map_window):
+        return
+
+    if _map_city_list_panel and is_instance_valid(_map_city_list_panel):
+        return  # 既に作ってあれば何もしない
+
+    # ルートのUIコンテナ（地図の上にかぶせる）
+    var ui_root: Control = map_window.get_node_or_null("MoveMapUI")
+    if ui_root == null:
+        ui_root = Control.new()
+        ui_root.name = "MoveMapUI"
+        ui_root.anchor_left = 0.0
+        ui_root.anchor_top = 0.0
+        ui_root.anchor_right = 1.0
+        ui_root.anchor_bottom = 1.0
+        ui_root.offset_left = 0
+        ui_root.offset_top = 0
+        ui_root.offset_right = 0
+        ui_root.offset_bottom = 0
+        ui_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        map_window.add_child(ui_root)
+
+    # 上部バー（一覧ボタンを置く）
+    var top_bar := HBoxContainer.new()
+    top_bar.name = "TopBar"
+    top_bar.anchor_left = 0.0
+    top_bar.anchor_top = 0.0
+    top_bar.anchor_right = 1.0
+    top_bar.anchor_bottom = 0.0
+    top_bar.offset_left = 16
+    top_bar.offset_top = 8
+    top_bar.offset_right = -16
+    top_bar.offset_bottom = 40
+    ui_root.add_child(top_bar)
+
+    var list_btn := Button.new()
+    list_btn.text = "一覧"
+    list_btn.focus_mode = Control.FOCUS_ALL
+    top_bar.add_child(list_btn)
+
+    var spacer := Control.new()
+    spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    top_bar.add_child(spacer)
+
+    # 右上の一覧パネル
+    var panel := PanelContainer.new()
+    panel.name = "CityListPanel"
+    panel.anchor_left = 1.0
+    panel.anchor_right = 1.0
+    panel.anchor_top = 0.0
+    panel.anchor_bottom = 1.0
+    panel.offset_left = -320
+    panel.offset_right = -16
+    panel.offset_top = 48
+    panel.offset_bottom = -16
+    panel.visible = false
+    panel.mouse_filter = Control.MOUSE_FILTER_STOP
+    ui_root.add_child(panel)
+
+    var scroll := ScrollContainer.new()
+    scroll.name = "Scroll"
+    scroll.anchor_left = 0.0
+    scroll.anchor_top = 0.0
+    scroll.anchor_right = 1.0
+    scroll.anchor_bottom = 1.0
+    scroll.offset_left = 8
+    scroll.offset_top = 8
+    scroll.offset_right = -8
+    scroll.offset_bottom = -8
+    panel.add_child(scroll)
+
+    var body := VBoxContainer.new()
+    body.name = "Body"
+    body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    body.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+    scroll.add_child(body)
+
+    _map_city_list_panel = panel
+    _map_city_list_body = body
+
+    # ボタンで開閉＆開くときにリストを再構築
+    list_btn.pressed.connect(func():
+        if not panel.visible:
+            _populate_map_city_list()
+        panel.visible = not panel.visible
+    )
+
+func _populate_map_city_list() -> void:
+    if world == null:
+        return
+    if _map_city_list_body == null or not is_instance_valid(_map_city_list_body):
+        return
+
+    # 既存の行をクリア
+    for child in _map_city_list_body.get_children():
+        child.queue_free()
+
+    # アンロック済み都市を集める
+    var entries: Array = []
+    for cid in world.cities.keys():
+        var cid_s := String(cid)
+        if world.has_method("is_city_unlocked"):
+            if not world.is_city_unlocked(cid_s):
+                continue
+        var info: Dictionary = world.cities.get(cid, {})
+        var row := {
+            "id": cid_s,
+            "name": String(info.get("name", cid_s)),
+            "province": String(info.get("province", ""))
+        }
+        entries.append(row)
+
+    if entries.is_empty():
+        var label := Label.new()
+        label.text = "移動可能な都市がありません。"
+        _map_city_list_body.add_child(label)
+        return
+
+    # プロヴィンス → 都市名 の順でソート
+    entries.sort_custom(Callable(self, "_compare_city_list_entry"))
+
+    var current_prov: String = ""
+    for row in entries:
+        var prov: String = String(row.get("province", ""))
+        if prov != "" and prov != current_prov:
+            current_prov = prov
+            var header := Label.new()
+            header.text = prov
+            _map_city_list_body.add_child(header)
+
+        var cid_value := String(row.get("id", ""))
+
+        var btn := Button.new()
+        btn.text = String(row.get("name", ""))
+        btn.focus_mode = Control.FOCUS_ALL
+        btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        btn.mouse_filter = Control.MOUSE_FILTER_STOP
+        btn.set_meta("city_id", cid_value)
+
+        # マウスオーバー時：都市ノードにホバーしたときと同様に経路プレビュー/ハイライト
+        btn.mouse_entered.connect(func(cid_local := cid_value):
+            if not is_instance_valid(map_window):
+                return
+            var map := map_window.get_node_or_null("MapLayer")
+            if map == null and map_window.get_child_count() > 0:
+                map = map_window.get_child(0)
+            if map and map.has_method("preview_move_target"):
+                map.call("preview_move_target", cid_local)
+        )
+
+        # 行からフォーカスが外れたらプレビュー解除
+        btn.mouse_exited.connect(func():
+            # 都市ノードと同様に、移動確認ダイアログ表示中はハイライトを維持する
+            if is_instance_valid(_move_confirm_dlg) and _move_confirm_dlg.visible:
+                return
+            if not is_instance_valid(map_window):
+                return
+            var map := map_window.get_node_or_null("MapLayer")
+            if map == null and map_window.get_child_count() > 0:
+                map = map_window.get_child(0)
+            if map and map.has_method("preview_move_target"):
+                map.call("preview_move_target", "")
+        )
+
+        # クリック時：
+        #  1) まず MAP 側にプレビューを出す
+        #  2) その後、都市ノードクリックと同じ確認ダイアログを開く
+        btn.pressed.connect(func(cid_local := cid_value):
+            if is_instance_valid(map_window):
+                var map := map_window.get_node_or_null("MapLayer")
+                if map == null and map_window.get_child_count() > 0:
+                    map = map_window.get_child(0)
+                if map and map.has_method("preview_move_target"):
+                    map.call("preview_move_target", cid_local)
+
+            _on_map_city_picked(cid_local)
+        )
+
+        _map_city_list_body.add_child(btn)
+
+
+
+func _compare_city_list_entry(a: Dictionary, b: Dictionary) -> bool:
+    var pa := String(a.get("province", ""))
+    var pb := String(b.get("province", ""))
+
+    if pa == pb:
+        var na := String(a.get("name", ""))
+        var nb := String(b.get("name", ""))
+        return na < nb
+
+    return pa < pb
+
 func _on_map_city_picked(cid: String) -> void:
-    
+
     # 二重生成防止：同じ都市で確認ダイアログが開いているならフォーカスだけ戻す
     if is_instance_valid(_move_confirm_dlg):
         if _move_confirm_dlg.visible and _last_move_pick_cid == cid:
@@ -766,11 +1020,16 @@ func _on_map_city_picked(cid: String) -> void:
     _last_move_pick_cid = cid
     if world == null or not is_instance_valid(map_window):
         return
+
     var origin: String = String(world.player.get("city", ""))
     var days: int = 0
-    var travel_cost: float = 0.0
-    var toll: float = 0.0
+    var travel_cost: float = 0.0        # 宿代・雑費（travel_cost_per_dayベース）
+    var travel_tax: float = 0.0         # 容量ベースの関税・通行税
+    var toll: float = 0.0               # ルート固有のtoll
     var use_path: Array[String] = []
+
+    # 経路は World.compute_path で決めるが、コスト計算は
+    # World._calc_edge_travel_cost(RANK係数+容量ベース税)で再集計する
     if world and world.has_method("compute_path"):
         var res: Dictionary = world.compute_path(origin, cid, "fastest")
         use_path = res.get("path", [])
@@ -778,21 +1037,61 @@ func _on_map_city_picked(cid: String) -> void:
             var err := AcceptDialog.new()
             err.title = "行けません"
             err.dialog_text = "その都市へ通じる道がありません。"
-            map_window.add_child(err); err.popup_centered(); return
-        days = int(res.get("days", 0))
-        travel_cost = float(res.get("travel_cost", world.travel_cost_per_day * float(days)))
-        toll = 0.0
-        if world.pay_toll_on_depart:
-            toll = float(res.get("toll", 0.0))
-    else:
-        days = world._route_days(origin, cid)
-        travel_cost = world.travel_cost_per_day * float(days)
-        toll = 0.0
-        if world.pay_toll_on_depart:
-            toll = float(world._route_toll(origin, cid))
+            map_window.add_child(err)
+            err.popup_centered()
+            return
 
-    var total: float = travel_cost + toll
+        # 現在の積載量（容量ベース）
+        var cap_used: int = 0
+        if world.has_method("_cargo_used"):
+            cap_used = world._cargo_used(world.player)
+        # 念のためのフォールバック（_cargo_used が無い場合）
+        if cap_used <= 0 and world.player.has("cargo"):
+            var cargo := world.player["cargo"] as Dictionary
+            for pid in cargo.keys():
+                var q: int = int(cargo[pid])
+                var size: int = 1
+                if world.products.has(pid):
+                    size = int(world.products[pid].get("size", 1))
+                cap_used += q * size
+
+        # 各辺ごとに World._calc_edge_travel_cost で集計
+        for i in range(use_path.size() - 1):
+            var u := String(use_path[i])
+            var v := String(use_path[i + 1])
+            if world.has_method("_calc_edge_travel_cost"):
+                var edge_cost: Dictionary = world._calc_edge_travel_cost(u, v, cap_used)
+                days += int(edge_cost.get("days", world._route_days(u, v)))
+                travel_cost += float(edge_cost.get("travel", 0.0))
+                travel_tax += float(edge_cost.get("tax", 0.0))
+                toll += float(edge_cost.get("toll", 0.0))
+            else:
+                var d_edge: int = world._route_days(u, v)
+                days += d_edge
+                travel_cost += world.travel_cost_per_day * float(d_edge)
+                if world.pay_toll_on_depart:
+                    toll += float(world._route_toll(u, v))
+    else:
+        # compute_path が無い環境向けのフォールバック（隣接前提）
+        use_path = [origin, cid]
+        var cap_used_fallback: int = 0
+        if world.has_method("_cargo_used"):
+            cap_used_fallback = world._cargo_used(world.player)
+        if world.has_method("_calc_edge_travel_cost"):
+            var edge := world._calc_edge_travel_cost(origin, cid, cap_used_fallback)
+            days = int(edge.get("days", world._route_days(origin, cid)))
+            travel_cost = float(edge.get("travel", 0.0))
+            travel_tax = float(edge.get("tax", 0.0))
+            toll = float(edge.get("toll", 0.0))
+        else:
+            days = world._route_days(origin, cid)
+            travel_cost = world.travel_cost_per_day * float(days)
+            if world.pay_toll_on_depart:
+                toll = float(world._route_toll(origin, cid))
+
+    var total: float = travel_cost + travel_tax + toll
     var cash: float = float(world.player.get("cash", 0.0))
+
     var dest_name: String = cid
     var origin_name: String = origin
     if world.cities.has(cid):
@@ -807,62 +1106,76 @@ func _on_map_city_picked(cid: String) -> void:
     dlg.exclusive = true
     _move_confirm_dlg = dlg
     dlg.title = "移動の確認"
+
     var text: String = "次の都市へ移動しますか？\n"
     text += "%s → %s\n" % [origin_name, dest_name]
     text += "日数: %d\n" % days
-    text += "旅費: %.1f\n" % travel_cost
+    text += "宿・雑費: %.1f\n" % travel_cost
+    text += "関税(容量ベース): %.1f\n" % travel_tax
     text += "通行料: %.1f\n" % toll
     text += "――――――――――\n"
     text += "合計: %.1f\n" % total
     text += "所持金: %.1f" % cash
+    if cash < total:
+        text += "\n\n※所持金が足りません。"
     dlg.dialog_text = text
 
     map_window.add_child(dlg)
     dlg.popup_centered()
-    if dlg.get_ok_button(): dlg.get_ok_button().text = "移動する"
-    if dlg.get_cancel_button(): dlg.get_cancel_button().text = "やめる"
+    if dlg.get_ok_button():
+        dlg.get_ok_button().text = "移動する"
+    if dlg.get_cancel_button():
+        dlg.get_cancel_button().text = "やめる"
 
     dlg.confirmed.connect(func():
         var res_ok := false
         if world and world.has_method("player_move_via") and use_path.size() >= 2:
-            # 資金チェック
+            # 資金チェック（World.player_move_via 側でも再チェックされる）
             if cash >= total and (int(world.player.get("last_arrival_day", -999)) != world.day):
                 res_ok = world.player_move_via(cid, use_path)
         else:
             var r := world.can_player_move_to(cid)
             if bool(r.get("ok", false)):
                 res_ok = world.player_move(cid)
+
         if res_ok:
-            var map := map_window.get_node_or_null("MapLayer")
-            if map and map.has_method("end_pick"):
-                map.call("end_pick")
+            # マップ上の選択状態をクリア
+            if is_instance_valid(map_window):
+                var map := map_window.get_node_or_null("MapLayer")
+                if map and map.has_method("end_pick"):
+                    map.call("end_pick")
+
+                # 移動開始に成功したらマップウインドウを閉じる
+                map_window.hide()
+                map_window.queue_free()
+                map_window = null
+
+            # 自身の確認ダイアログを破棄
             if is_instance_valid(_move_confirm_dlg):
                 _move_confirm_dlg.hide()
                 _move_confirm_dlg.queue_free()
                 _move_confirm_dlg = null
 
             _refresh()
-        else:
-            var err := AcceptDialog.new()
-            err.title = "移動できません"
-            err.dialog_text = "出発できませんでした。"
-            map_window.add_child(err)
-            err.popup_centered()
     )
-    dlg.popup_centered()
+
     _sync_pause_state()
     dlg.confirmed.connect(_sync_pause_state)
     dlg.canceled.connect(_sync_pause_state)
     dlg.close_requested.connect(_sync_pause_state)
-        # キャンセル/×閉じる時に地図側のラベル/ハイライトを消す
+
+    # キャンセル/×閉じる時に地図側のラベル/ハイライトを消す
     var _clear_map_highlight := func():
         if is_instance_valid(map_window):
             var map := map_window.get_node_or_null("MapLayer")
             if map and map.has_method("clear_pick_highlight"):
                 map.call("clear_pick_highlight")
+
     dlg.canceled.connect(_clear_map_highlight)
     dlg.close_requested.connect(_clear_map_highlight)
     dlg.grab_focus()
+
+
 
 func _open_inventory_window() -> void:
     if is_instance_valid(inventory_window):
@@ -1213,6 +1526,175 @@ func _resolve_dialog_player() -> void:
         dialog_player = get_node_or_null(dialog_player_path)
     if dialog_player == null:
         dialog_player = get_tree().root.find_child("DialogPlayer", true, false)
+
+func _ensure_dialog_ui() -> void:
+    if _dialog_ui != null and is_instance_valid(_dialog_ui):
+        return
+
+    # DialogPlayer 経由で探す（dialog_player は既存の export ）
+    if dialog_player != null:
+        var d = dialog_player.get("dialog_ui")
+        if d is Node:
+            _dialog_ui = d
+            return
+
+    # 念のためツリー全体から "Dialog" という名前のノードも探す
+    var tree := get_tree()
+    if tree == null:
+        return
+    var root := tree.root
+    if root == null:
+        return
+    var found := root.find_child("Dialog", true, false)
+    if found != null:
+        _dialog_ui = found
+
+
+func _ensure_auto_travel_timer() -> void:
+    if _auto_travel_timer != null and is_instance_valid(_auto_travel_timer):
+        return
+
+    var tmr := Timer.new()
+    tmr.one_shot = false
+    tmr.wait_time = 1.0
+    add_child(tmr)
+    tmr.timeout.connect(_on_auto_travel_tick)
+    _auto_travel_timer = tmr
+
+func _update_travel_progress_text() -> void:
+    if not _auto_travel_dialog_in_use:
+        return
+    if _dialog_ui == null or not is_instance_valid(_dialog_ui):
+        return
+
+    var dots := ""
+    if _auto_travel_total_days > 0:
+        var n : Variant = clamp(_auto_travel_elapsed_days, 0, _auto_travel_total_days)
+        for i in range(n):
+            dots += "・"
+
+    var line := "移動中%s" % dots
+
+    # Dialog.gd の公開 API を使ってテキスト更新
+    # show_lines(lines: Array[String], speaker: String)
+    var lines: Array[String] = []
+    lines.append(line)
+    _dialog_ui.call("show_lines", lines, "")
+
+func start_auto_travel() -> void:
+    if world == null:
+        return
+
+    var player := world.player
+    if player == null:
+        return
+
+    # そもそも移動中でなければ何もしない
+    if not bool(player.get("enroute", false)):
+        return
+
+    var today: int = int(world.day)
+    var arrival_day: int = int(player.get("arrival_day", today))
+    var total_days: int = arrival_day - today
+    if total_days <= 0:
+        total_days = 1
+
+    _auto_travel_total_days = total_days
+    _auto_travel_elapsed_days = 0
+    _auto_travel_dest_city = String(player.get("dest", ""))
+
+    _auto_travel_active = true
+
+    _ensure_auto_travel_timer()
+    _ensure_dialog_ui()
+
+    # 自動移動中はワールド内部タイマーを停止し、HUD 側のタイマーで日数を進める
+    if world.has_method("is_paused") and world.has_method("pause"):
+        _user_paused = true
+        world.pause()
+        _update_play_button()
+
+    # メッセージウインドウ側のセッティング
+    if _dialog_ui != null and is_instance_valid(_dialog_ui):
+        _auto_travel_prev_debug_skip = bool(_dialog_ui.get("debug_skip_delay"))
+        _dialog_ui.set("debug_skip_delay", true)  # 即時表示にする
+        _auto_travel_dialog_in_use = true
+        _update_travel_progress_text()
+
+    _auto_travel_timer.start()
+
+
+func _on_auto_travel_tick() -> void:
+    if not _auto_travel_active:
+        return
+    if world == null:
+        return
+
+    var player := world.player
+    if player == null:
+        _stop_auto_travel(false)
+        return
+
+    # ダイス演出やイベントダイアログ表示中はオート移動を一時停止
+    if _is_rolling:
+        return
+    if _any_supply_dialog_visible():
+        return
+
+    # ユーザーが自分で再生ボタンを押してワールドを動かし始めたら、
+    # オート移動はユーザー操作を優先して中断
+    if world.has_method("is_paused") and not world.is_paused():
+        _stop_auto_travel(false)
+        return
+
+    # すでに到着していた場合
+    if not bool(player.get("enroute", false)):
+        _stop_auto_travel(true)
+        return
+
+    # 1日進める（ここで道中イベントのロールも発生する）
+    if world.has_method("step_one_day"):
+        world.step_one_day()
+
+    _auto_travel_elapsed_days += 1
+    _update_travel_progress_text()
+
+    # この 1 日で到着した場合
+    if not bool(player.get("enroute", false)):
+        _stop_auto_travel(true)
+
+
+func _stop_auto_travel(show_arrival: bool) -> void:
+    _auto_travel_active = false
+
+    if _auto_travel_timer != null and is_instance_valid(_auto_travel_timer):
+        _auto_travel_timer.stop()
+
+    var dest_name := ""
+    if world != null and _auto_travel_dest_city != "":
+        if world.cities.has(_auto_travel_dest_city):
+            var city_info : Variant = world.cities.get(_auto_travel_dest_city, {})
+            dest_name = String(city_info.get("name", _auto_travel_dest_city))
+
+    if _dialog_ui != null and is_instance_valid(_dialog_ui) and _auto_travel_dialog_in_use:
+        # debug_skip_delay を元に戻す
+        _dialog_ui.set("debug_skip_delay", _auto_travel_prev_debug_skip)
+
+        if show_arrival:
+            var msg := ""
+            if dest_name != "":
+                msg = "%sに着いた！" % dest_name
+            else:
+                msg = "目的地に着いた！"
+            var lines: Array[String] = []
+            lines.append(msg)
+            _dialog_ui.call("show_lines", lines, "")
+            
+        else:
+            _dialog_ui.call("stop_dialog")
+
+    _auto_travel_dialog_in_use = false
+    _auto_travel_dest_city = ""
 
 
 func _on_dice_started(kind: String) -> void:

@@ -1,4 +1,4 @@
-﻿# === OFFICIAL CANVAS ===
+# === OFFICIAL CANVAS ===
 # World.gd (res://scripts/world.gd)
 # このキャンバスを唯一の最新版として使用します。重複キャンバスはアーカイブ対象。
 
@@ -32,6 +32,8 @@ signal weekly_report(province: String, payload: Dictionary)
 # 経済コスト
 @export var travel_cost_per_day: float = 2.0     # 出発時に（日数×この額）
 @export var trade_tax_rate: float = 0.03         # 売上税（販売都市の金庫へ）
+@export var travel_tax_per_cap: float = 0.05     # 1容量あたりの通行税・関税ベース額（都市RANK係数を掛ける）
+
 @export var events_daily_file: String = "events_daily.csv"   # 日時イベントテーブル（CSV）
 @export var events_travel_file: String = "events_travel.csv" # 道中イベントテーブル（CSV）
 
@@ -79,6 +81,29 @@ var rank_table: RankTable = RankTableScript.new()
     2.00   # 10: 大都市
 ]
 
+func _rank_travel_mult(rank: int) -> float:
+    var r: int = clamp(rank, 1, 10)
+    if rank_travel_multipliers.size() > r:
+        return float(rank_travel_multipliers[r])
+    # 足りない場合のフォールバック（とりあえず1.0＝補正なし）
+    return 1.0
+
+
+@export var rank_travel_multipliers: Array = [                  # RANK→旅費・関税の係数（index=rank、1..10）
+    0.0,   # dummy (0)
+    0.85,  # 1: 村（かなり安い）
+    0.90,  # 2
+    0.95,  # 3
+    1.00,  # 4: やや安い
+    1.05,  # 5: 標準クラス
+    1.10,  # 6
+    1.15,  # 7
+    1.20,  # 8
+    1.25,  # 9
+    1.30   # 10: ハイランク都市（港・大都市）
+]
+
+
 @export var category_base_consume: Dictionary = {  # category→日次ベース（RANK5時の基準）
     "staple": 0.80,   # 主食（小麦/豆/パン等）
     "food":   0.60,   # 食料（魚/チーズ等）
@@ -113,6 +138,10 @@ var stock: Dictionary = {}            # city_id -> pid -> {"qty": float, "target
 var price: Dictionary = {}            # city_id -> pid -> float
 var history: Dictionary = {}          # city_id -> pid -> Array[float]
 var traders: Array[Dictionary] = []   # list of traders
+# === Reputation / Trust ===
+@export_range(0.0, 100.0, 0.1) var rep_global: float = 0.0
+var rep_by_province: Dictionary = {}
+var rep_by_city: Dictionary = {}  # 将来拡張用（現状は未使用）
 # --- dynamics & logs (added) ---
 @export var year_days: int = 360                     # 供給の季節サイクル長（ゲーム内日数）
 # 供給ルール（A案：スタンダード）
@@ -237,8 +266,22 @@ var backlog: Dictionary = {}
     "general":0.5
 }
 
+@export var supply_min_batch: float = 1.0       # 最小放出ロット（整数化前の閾値）
+@export var supply_max_batch: float = 6.0       # 1回の最大放出量（市場へのドカ出し抑制）
+@export var supply_cooldown_days: int = 2       # 最低クールダウン（日）
+@export var supply_cooldown_jitter: int = 2     # クールダウンに乗る±揺らぎ（日）0なら固定
+@export var supply_use_poisson: bool = false    # trueなら指数分布の間隔（上級）
+var _supply_sched: Dictionary = {}   # city_id -> pid -> { "buf":float, "next":int, "cool":int, "phase":int }
+
+
 # 価格更新時に「目標在庫」にバックログを何割足すか（1.0=全量）
 @export var backlog_target_weight: float = 1.0
+
+# === Backlog 吸収・蒸発の調整 ===
+@export var backlog_absorb_rate: float = 0.50      # 入荷(added)のうち、即時にバックログへ回す比率（0〜1）
+@export var backlog_absorb_daily_cap: float = 3.0  # バックログ即時吸収の1日上限（都市×品目）。0で上限なし
+@export var backlog_decay_rate: float = 0.03       # バックログの日次自然減（3%/日）。0で減衰なし
+
 
 # 目標在庫の自動補正（CSV target<=1 のとき、ランク別 safety_days × 平常消費 で補う）
 @export var auto_target_fill_enable: bool = true
@@ -284,6 +327,7 @@ func _ready() -> void:
     add_child(_loader)
     load_data()
     _normalize_targets_after_load()
+    _init_reputation()  # ★追加：評判の入れ物を、都市・プロヴィンス情報から初期化
     build_graph()
     update_prices()
     init_traders()
@@ -299,6 +343,7 @@ func _ready() -> void:
 
     _paused = true
     _log("World ready. Cities=%d, Products=%d, Routes=%d" % [cities.size(), products.size(), routes.size()])
+    day = _calc_day_index_for_start(start_month, start_dom)
     world_updated.emit()
 
 
@@ -340,8 +385,21 @@ func step_one_day() -> void:
     _roll_travel_event_for_player()
     finalize_day()
 
+func _decay_backlog_daily() -> void:
+    if backlog_decay_rate <= 0.0:
+        return
+    for cid in backlog.keys():
+        var d: Dictionary = backlog[cid]
+        for pid in d.keys():
+            var cur: float = float(d[pid])
+            if cur > 0.0:
+                var dec: float = cur * backlog_decay_rate
+                d[pid] = max(0.0, cur - dec)
+        backlog[cid] = d
+
 func finalize_day() -> void:
     # 生産/消費 → 供給 → 価格 → 市・屋台 → NPC → プレイヤー到着 → 劣化 → 通知
+    _decay_backlog_daily()  # ← 追加：バックログを日次で少し蒸発させる
     for city_id in stock.keys():
         for pid in stock[city_id].keys():
             var rec: Dictionary = stock[city_id][pid]
@@ -351,9 +409,11 @@ func finalize_day() -> void:
             stock[city_id][pid]["cons"] = demand
 
             # 1) 生産の取り込み: まず backlog の即時吸収、残りのみ在庫へ
-            var prod_today: float = float(rec.get("prod", 0.0))
-            if prod_today > 0.0:
-                _add_stock_inflow(city_id, pid, prod_today)
+            var cal := get_calendar()
+            var _m: int = int(cal.get("month", 1))
+            var base_prod_today: float = float(rec.get("prod", 0.0))
+            _enqueue_prod(city_id, pid, base_prod_today)   # ← バッファへ
+            _try_release_batches(city_id, pid)             # ← 条件成立時だけ市場に出す
 
             # 2) 当日の販売（市場在庫から需要ぶんだけ減る）
             var have: float = float(stock[city_id][pid].get("qty", 0.0))
@@ -378,12 +438,17 @@ func finalize_day() -> void:
     if enable_stalls:
         _process_auto_sales()
 
+    # NPC商人の到着＆出発
     for t in traders:
         var just_arrived: bool = bool(t.get("enroute", false)) and int(t.get("arrival_day", 0)) <= day
         if just_arrived:
             _arrive_and_trade(t)
+
         if not bool(t.get("enroute", false)) and (depart_same_day or not just_arrived):
-            _plan_and_depart(t)
+            var city_id: String = String(t.get("city", ""))
+            if city_id != "":
+                var plan: Dictionary = _best_trade_from(city_id, t)
+                _plan_and_depart(t, plan)
 
     if bool(player.get("enroute", false)) and int(player.get("arrival_day", 0)) <= day:
         _player_arrive()
@@ -485,41 +550,6 @@ func resolve_travel_with_roll(roll: int, q: float = -1.0) -> void:
         _world_message("小さなトラブルはあったが問題なく進めた。")
         return
     _apply_travel_outcome(ev)
-
-
-
-    # 追加：ランダム供給（デフォルト無効＝rules空）
-    if enable_auto_supply:
-        if enable_auto_supply:
-            _apply_supply_events()
-
-    update_prices()
-    # ▼▼▼ 追加：定期市/委託の“日次処理” ▼▼▼
-    if enable_fairs:
-        _tick_fairs()
-    if enable_stalls:
-        _process_auto_sales()
-    # ▲▲▲ ここまで ▲▲▲
-    # NPC 行動
-    for t in traders:
-        var just_arrived: bool = bool(t.get("enroute", false)) and int(t.get("arrival_day", 0)) <= day
-        if just_arrived:
-            _arrive_and_trade(t)
-        if not bool(t.get("enroute", false)) and (depart_same_day or not just_arrived):
-            _plan_and_depart(t)
-
-    # プレイヤー到着
-    if bool(player.get("enroute", false)) and int(player.get("arrival_day", 0)) <= day:
-        _player_arrive()
-
-    if enable_player_decay:
-        _apply_player_decay()
-
-    day_advanced.emit(day)
-    world_updated.emit()
-    _log_day_summary()
-    if log_daily_supply_count:
-        _log_supply_daily_count()
 
 # ---- Effects / Message helpers ----
 func _effects_tick_down() -> void:
@@ -1140,6 +1170,26 @@ func load_data() -> void:
     _events_daily = _loader.load_csv_dicts(data_dir + events_daily_file)
     _events_travel = _loader.load_csv_dicts(data_dir + events_travel_file)
 
+func _init_reputation() -> void:
+    # 0〜100に正規化
+    rep_global = clamp(rep_global, 0.0, 100.0)
+
+    if rep_by_province == null:
+        rep_by_province = {}
+    if rep_by_city == null:
+        rep_by_city = {}
+
+    # 都市一覧からプロヴィンス名を拾って rep_by_province を初期化
+    # 既に値が入っているキーはそのまま温存し、新しいプロヴィンスだけ 0.0 で追加する。
+    for cid in cities.keys():
+        var info: Dictionary = cities.get(cid, {})
+        var prov := String(info.get("province", ""))
+        if prov == "":
+            continue
+        if not rep_by_province.has(prov):
+            rep_by_province[prov] = 0.0
+
+
 func build_graph() -> void:
     adj.clear()
     for cid in cities.keys():
@@ -1267,29 +1317,26 @@ func _arrive_and_trade(t: Dictionary) -> void:
         _log("%s sold %s x%d @%.1f in %s (+%.1f, tax %.1f)" % [t["id"], pid, int(qty), get_bid_price(t["city"], pid), t["city"], revenue, tax])
 
 
-func _plan_and_depart(t: Dictionary) -> void:
-    var city: String = String(t["city"])
-
-    var plan: Dictionary = _best_trade_from(city, t)
-    var dest: String = String(plan.get("dest", ""))
-    if dest == "":
+func _plan_and_depart(t: Dictionary, plan: Dictionary) -> void:
+    if plan.is_empty():
         return
 
+    var city: String = String(t.get("city", ""))
+    var dest: String = String(plan.get("dest", ""))
     var pid: String = String(plan.get("pid", ""))
     var qty: int = int(plan.get("qty", 0))
-    if pid == "" or qty <= 0:
+
+    if city == "" or dest == "" or pid == "" or qty <= 0:
+        return
+    if not adj.has(city) or not (dest in (adj[city] as Array)):
         return
 
-    var days_cost: int = int(plan.get("days", _route_days(city, dest)))
-    var travel_cost: float = float(plan.get("travel", travel_cost_per_day * float(days_cost)))
-    var toll: float = (float(plan.get("toll", _route_toll(city, dest))) if pay_toll_on_depart else 0.0)
+    if not t.has("cargo"):
+        t["cargo"] = {}
 
-    var ask_price: float = get_ask_price(city, pid)
     var cash_now: float = float(t.get("cash", 0.0))
-    var max_q_cash: int = int(floor((cash_now - (travel_cost + toll)) / max(1.0, ask_price)))
-    if max_q_cash < qty:
-        qty = max(0, max_q_cash)
 
+    # 在庫・容量側の上限
     _ensure_stock_record(city, pid)
     var avail: int = int(floor(float(stock[city][pid]["qty"])))
     var unit_size: int = int(products[pid].get("size", 1))
@@ -1299,24 +1346,52 @@ func _plan_and_depart(t: Dictionary) -> void:
     if qty <= 0:
         return
 
+    var ask_price: float = get_ask_price(city, pid)
+
+    # 候補数量で「購入＋移動コスト」を払えるか確認して調整
+    var cap_used_after: int = _cargo_used(t) + qty * unit_size
+    var edge_cost: Dictionary = _calc_edge_travel_cost(city, dest, cap_used_after)
+    var travel_total: float = float(edge_cost.get("total", 0.0))
+
+    var max_by_cash: int = int(floor((cash_now - travel_total) / max(1.0, ask_price)))
+    qty = max(0, min(qty, max_by_cash))
+    if qty <= 0:
+        return
+
+    # 最終チェック（安全側にもう一度計算）
+    cap_used_after = _cargo_used(t) + qty * unit_size
+    edge_cost = _calc_edge_travel_cost(city, dest, cap_used_after)
+    travel_total = float(edge_cost.get("total", 0.0))
+
+    if cash_now < float(qty) * ask_price + travel_total:
+        return
+
+    # 実際の取引
     stock[city][pid]["qty"] = float(stock[city][pid]["qty"]) - float(qty)
     t["cash"] = cash_now - float(qty) * ask_price
     t["cargo"][pid] = int(t["cargo"].get(pid, 0)) + qty
     _update_price_for(city, pid)
 
+    var days_cost: int = int(edge_cost.get("days", _route_days(city, dest)))
     t["dest"] = dest
     t["arrival_day"] = day + days_cost
     t["enroute"] = true
 
-    if travel_cost > 0.0:
-        t["cash"] = max(0.0, float(t["cash"]) - travel_cost)
-        cities[city]["funds"] = float(cities[city]["funds"]) + travel_cost
-    if pay_toll_on_depart and toll > 0.0:
-        t["cash"] = max(0.0, float(t["cash"]) - toll)
-        cities[city]["funds"] = float(cities[city]["funds"]) + toll * 0.5
-        cities[dest]["funds"] = float(cities[dest]["funds"]) + toll * 0.5
+    # 旅費支払い＋到着都市へ反映
+    if travel_total > 0.0:
+        t["cash"] = max(0.0, float(t["cash"]) - travel_total)
+        if cities.has(dest):
+            cities[dest]["funds"] = float(cities[dest].get("funds", 0.0)) + travel_total
 
-    _log("%s depart %s -> %s carrying %s x%d (profit≈%.1f)" % [t["id"], city, dest, pid, qty, float(plan.get("profit", 0.0))])
+    _log("%s depart %s -> %s carrying %s x%d (profit≈%.1f)" % [
+        t.get("id", "?"),
+        city,
+        dest,
+        pid,
+        qty,
+        float(plan.get("profit", 0.0))
+    ])
+
 
 func _best_trade_from(city: String, t: Dictionary) -> Dictionary:
     var best: Dictionary = {"dest": "", "pid": "", "qty": 0, "profit": -1e20}
@@ -1706,27 +1781,21 @@ func can_player_move_to(dest: String) -> Dictionary:
     return {"ok": true, "need": total_cost, "days": days}
 
 func player_move(dest: String) -> bool:
+    # 1ステップ移動も player_move_via に統一して扱う
     if bool(player.get("enroute", false)):
         return false
     if int(player.get("last_arrival_day", -999)) == day:
         return false
+
     var a: String = String(player.get("city", ""))
+    if a == "" or dest == "":
+        return false
     if not adj.has(a) or not (dest in (adj[a] as Array)):
         return false
-    var days: int = _route_days(a, dest)
-    var travel_cost: float = travel_cost_per_day * float(days)
-    var toll: float = (float(_route_toll(a, dest)) if pay_toll_on_depart else 0.0)
-    var total_cost: float = travel_cost + toll
-    if float(player.get("cash", 0.0)) < total_cost:
-        return false
-    player["cash"] = float(player["cash"]) - total_cost
-    cities[a]["funds"] = float(cities[a]["funds"]) + travel_cost + toll * 0.5
-    cities[dest]["funds"] = float(cities[dest]["funds"]) + toll * 0.5
-    player["dest"] = dest
-    player["arrival_day"] = day + days
-    player["enroute"] = true
-    world_updated.emit()
-    return true
+
+    var path: Array[String] = [a, dest]
+    return player_move_via(dest, path)
+
 
 # ---- Path & multi-hop travel (new) ----
 func path_exists(a: String, b: String) -> bool:
@@ -1747,6 +1816,41 @@ func path_exists(a: String, b: String) -> bool:
                 visited[nb] = true
                 q.append(nb)
     return false
+
+func _calc_edge_travel_cost(u: String, v: String, cap_used: int) -> Dictionary:
+    # u→v を移動するときのコストをまとめて計算するヘルパー
+    var days: int = _route_days(u, v)
+    if days <= 0:
+        days = 1
+
+    var rank: int = 5
+    if cities.has(v):
+        rank = int(cities[v].get("rank", 5))
+    var rank_mult: float = _rank_travel_mult(rank)
+
+    # 宿代・馬の餌代みたいな「日数ベースのコスト」をRANKで重くする
+    var travel: float = travel_cost_per_day * float(days) * rank_mult
+
+    # 積載容量ベースの通行税・関税（価格ではなく容量）
+    var cap_u: int = max(0, cap_used)
+    var tax: float = travel_tax_per_cap * float(cap_u) * rank_mult
+
+    # 既存のルート固有tollもまだ生かしておく
+    var toll: float = 0.0
+    if pay_toll_on_depart:
+        toll = float(_route_toll(u, v))
+
+    var total: float = travel + tax + toll
+
+    return {
+        "days": days,
+        "travel": travel,
+        "tax": tax,
+        "toll": toll,
+        "total": total,
+        "rank_mult": rank_mult,
+    }
+
 
 func _edge_cost(u: String, v: String, weight_type: String) -> float:
     var d: int = _route_days(u, v)
@@ -1837,30 +1941,49 @@ func player_move_via(dest: String, path: Array[String]) -> bool:
         return false
     if String(path.front()) != String(player.get("city", "")) or String(path.back()) != dest:
         return false
-    # Sum costs
-    var days: int = 0
-    var toll: float = 0.0
-    for i in range(path.size()-1):
-        var u := path[i]
-        var v := path[i+1]
-        days += _route_days(u, v)
-        toll += _route_toll(u, v)
-    var travel_cost_total: float = travel_cost_per_day * float(days)
-    var total_cost: float = travel_cost_total + (toll if pay_toll_on_depart else 0.0)
+
+    # 現在の積載量をもとに、各辺のコストを集計
+    var cap_used: int = _cargo_used(player)
+
+    var days_total: int = 0
+    var total_cost: float = 0.0
+    var per_city_cost: Dictionary = {}  # city_id -> float
+
+    for i in range(path.size() - 1):
+        var u := String(path[i])
+        var v := String(path[i + 1])
+
+        var edge_cost: Dictionary = _calc_edge_travel_cost(u, v, cap_used)
+        var d_edge: int = int(edge_cost.get("days", 0))
+        var c_edge: float = float(edge_cost.get("total", 0.0))
+
+        days_total += d_edge
+        total_cost += c_edge
+        per_city_cost[v] = float(per_city_cost.get(v, 0.0)) + c_edge
+
+    if days_total <= 0:
+        return false
+
     if float(player.get("cash", 0.0)) < total_cost:
         return false
-    # Pay
+
+    # 支払い
     player["cash"] = float(player["cash"]) - total_cost
-    var a := String(player.get("city", ""))
-    # deposit travel/toll half to endpoints only (simple)
-    cities[a]["funds"] = float(cities[a]["funds"]) + travel_cost_total + toll * 0.5
-    cities[dest]["funds"] = float(cities[dest]["funds"]) + toll * 0.5
-    # depart
+
+    # 各ステップの「到着側の都市」にコストを反映
+    for cid_any in per_city_cost.keys():
+        var cid := String(cid_any)
+        if not cities.has(cid):
+            continue
+        cities[cid]["funds"] = float(cities[cid].get("funds", 0.0)) + float(per_city_cost[cid])
+
+    # 出発
     player["dest"] = dest
-    player["arrival_day"] = day + days
+    player["arrival_day"] = day + days_total
     player["enroute"] = true
     world_updated.emit()
     return true
+
 
 func player_buy(pid: String, qty: int) -> bool:
     if bool(player.get("enroute", false)):
@@ -1926,6 +2049,15 @@ func player_sell(pid: String, qty: int) -> bool:
 @export var MONTHS_PER_YEAR: int = 12
 var DAYS_PER_YEAR: int = DAYS_PER_MONTH * MONTHS_PER_YEAR
 
+@export var start_month: int = 5          # 初期開始「月」（1..12）
+@export var start_dom:   int = 1          # 初期開始「日」（1..DAYS_PER_MONTH）
+
+func _calc_day_index_for_start(month: int, dom: int) -> int:
+    var m : float = clamp(month, 1, MONTHS_PER_YEAR)
+    var d : float = clamp(dom,   1, DAYS_PER_MONTH)
+    # 年は常に1年目開始想定：Day0＝1/1
+    return (m - 1) * DAYS_PER_MONTH + (d - 1)
+
 # day は従来どおり「通算日」。0スタート想定（Day 0 ＝ 1年1月1日）
 func get_calendar(day_idx: int = -1) -> Dictionary:
     var d := (day if day_idx < 0 else day_idx)
@@ -1955,6 +2087,26 @@ func _season_of_month(m: int) -> String:
 func _season_supply_multiplier(month: int) -> float:
     var tag := _season_of_month(month)
     return float(season_supply_mult.get(tag, 1.0))
+
+# 品目×月の生産係数（1.0=平常）。月は1..12
+func _prod_month_multiplier(pid: String, month: int) -> float:
+    var m : float = clamp(month, 1, 12)
+
+    # 例）要件：
+    # - 小麦（PR003）：5–9月に生産大（1.8）、それ以外は備蓄程度（0.15）
+    # - タラ（PR005）：冬（12–2月）に漁が立つ（1.6）、他は控えめ（0.6）
+    var table := {
+        "PR003": [0.05, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 0.15, 0.1],
+        "PR005": [1.0, 1.0, 0.60, 0.60, 0.50, 0.40, 0.50, 0.60, 0.60, 0.60, 0.60, 1.0],
+    }
+
+    if table.has(pid):
+        var arr: Array = table[pid]
+        return float(arr[m - 1])
+
+    # それ以外は平常
+    return 1.0
+
 
 # ==== Config / State ====
 @export var enable_stalls := false
@@ -3211,16 +3363,26 @@ func _ensure_backlog_record(cid: String, pid: String) -> void:
     backlog[cid] = d
 
 func _backlog_absorb_on_inflow(cid: String, pid: String, added: float) -> float:
-    # 入荷(added)のうち、未充足需要(backlog)に即時に飲まれる分を返す
+    # 入荷(added)のうち、未充足需要(backlog)に即時に飲まれる分を返す（部分吸収＋上限）
     if not use_backlog_absorption:
         return 0.0
+
     _ensure_backlog_record(cid, pid)
     var need: float = float(backlog[cid][pid])
-    if need <= 0.0:
+    if need <= 0.0 or added <= 0.0:
         return 0.0
-    var used: float = min(added, need)
+
+    var rate: float = clamp(backlog_absorb_rate, 0.0, 1.0)
+    var allow: float = added * rate
+
+    var cap: float = max(0.0, backlog_absorb_daily_cap)
+    if cap > 0.0:
+        allow = min(allow, cap)
+
+    var used: float = min(allow, need)
     backlog[cid][pid] = max(0.0, need - used)
     return used
+
 
 func _add_stock_inflow(cid: String, pid: String, added: float) -> void:
     # 市場に「在庫として」乗る前に backlog を吸収し、残りだけを qty へ加算
@@ -3534,3 +3696,133 @@ func contracts_get_offers_for(city_id: String) -> Array:
         return []
     _contracts_sweep_expired()
     return _contract_offers[city_id]
+
+func _ensure_supply_sched(cid: String, pid: String) -> void:
+    if not _supply_sched.has(cid):
+        _supply_sched[cid] = {}
+    if not _supply_sched[cid].has(pid):
+        var day_seed: int = int(hash(cid + ":" + pid)) & 0x7fffffff
+        var phase: int = day_seed % 7  # 都市×品目の曜日的位相（0〜6）
+
+        var cool_base: int = max(1, int(supply_cooldown_days))
+        var jitter: int = 0
+        if int(supply_cooldown_jitter) != 0:
+            var span: int = 2 * int(supply_cooldown_jitter) + 1
+            var r: int = int(day_seed % span)  # 0..span-1
+            jitter = r - int(supply_cooldown_jitter)  # -jitter..+jitter
+
+        var cool: int = max(1, cool_base + jitter)
+
+        _supply_sched[cid][pid] = {
+            "buf": 0.0,
+            "next": _day_serial() + phase,
+            "cool": cool,
+            "phase": phase
+        }
+
+# 暦から単調増加の“日通し番号”を作る（_day_index不在環境向け）
+func _day_serial() -> int:
+    var cal: Dictionary = get_calendar()
+    var y: int = int(cal.get("year", 1))
+    var m: int = int(cal.get("month", 1))
+    var d: int = int(cal.get("day", 1))
+    # 31日固定の簡易直列化：年*372 + (月-1)*31 + 日
+    return y * 372 + (m - 1) * 31 + d
+
+
+func _enqueue_prod(cid: String, pid: String, base_prod_today: float) -> void:
+    _ensure_supply_sched(cid, pid)
+    var cal: Dictionary = get_calendar()
+    var m: int = int(cal.get("month", 1))
+    var prod_today: float = base_prod_today * _prod_month_multiplier(pid, m)
+    if prod_today <= 0.0:
+        return
+    var s: Dictionary = _supply_sched[cid][pid]
+    var buf: float = float(s.get("buf", 0.0))
+    buf += prod_today
+    s["buf"] = buf
+    _supply_sched[cid][pid] = s
+
+
+func _try_release_batches(cid: String, pid: String) -> void:
+    _ensure_supply_sched(cid, pid)
+    var s: Dictionary = _supply_sched[cid][pid]
+    var today: int = _day_serial()
+
+    var next_check: int = int(s.get("next", today))
+    if today < next_check:
+        return
+
+    var buf: float = float(s.get("buf", 0.0))
+    if buf < float(supply_min_batch):
+        # 閾値未満：次のチェック日だけ更新
+        var cool: int = int(s.get("cool", max(1, int(supply_cooldown_days))))
+        s["next"] = today + cool
+        _supply_sched[cid][pid] = s
+        return
+
+    # 放出量決定（ロット化）
+    var release: float = floor(buf)
+    release = clamp(release, float(supply_min_batch), float(supply_max_batch))
+
+    if release > 0.0:
+        _add_stock_inflow(cid, pid, release)
+        buf -= release
+
+    # 次回チェック日
+    var cool2: int = int(s.get("cool", max(1, int(supply_cooldown_days))))
+    if supply_use_poisson:
+        var base_gap: int = max(1, cool2)
+        # 簡易ゆらぎ：today, cid, pidから擬似乱数を作る
+        var seed_str: String = str(today) + ":" + cid + ":" + pid
+        var jitter_raw: int = int(hash(seed_str)) & 0x7fffffff
+        var jitter: int = int(jitter_raw % (base_gap + 1))
+        s["next"] = today + base_gap + jitter
+    else:
+        s["next"] = today + cool2
+
+    s["buf"] = buf
+    _supply_sched[cid][pid] = s
+
+# === Key Items（大切なもの）API =====================================
+
+func give_key_item(id: String, count: int = 1) -> void:
+    # プレイヤーに「大切なもの」を付与する
+    if count <= 0:
+        return
+    if player == null:
+        return
+
+    var inv := player.get("key_items", {}) as Dictionary
+    var cur: int = int(inv.get(id, 0))
+    inv[id] = cur + count
+    player["key_items"] = inv
+
+    # 将来はCSVから正式名称を取ってくる想定（今はidのまま）
+    var name_str := id
+    _world_message("%s を手に入れた。" % name_str)
+
+func has_key_item(id: String) -> bool:
+    if player == null:
+        return false
+    var inv := player.get("key_items", {}) as Dictionary
+    return int(inv.get(id, 0)) > 0
+
+func remove_key_item(id: String, count: int = 1) -> void:
+    # クエスト消費型のキーアイテム用（使わないものは呼ばなくてよい）
+    if count <= 0:
+        return
+    if player == null:
+        return
+
+    var inv := player.get("key_items", {}) as Dictionary
+    if not inv.has(id):
+        return
+
+    var cur: int = int(inv.get(id, 0))
+    cur -= count
+    if cur > 0:
+        inv[id] = cur
+    else:
+        inv.erase(id)
+    player["key_items"] = inv

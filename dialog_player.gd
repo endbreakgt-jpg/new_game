@@ -10,6 +10,8 @@ var rows_by_id: Dictionary = {}
 # 現在再生中の行データ（ポートレート切替に使用）
 var _active_rows: Array[Dictionary] = []
 
+signal line_started(id: String, seq: int, row: Dictionary)
+
 func _ready() -> void:
     _resolve_dialog_ui()
     _load_csv()
@@ -81,35 +83,67 @@ func play(id: String) -> bool:
         push_error("DialogPlayer: dialog_ui is not assigned.")
         return false
     _prepare_dialog_ui()
+
     var rows: Array = rows_by_id.get(id, [])
     if rows.is_empty():
         push_warning("DialogPlayer: id '%s' not found in %s" % [id, csv_path])
         return false
 
-    # スピーカー名・台詞・初期ポートレート
+    # 行データを保持（speaker / portrait を行ごとに適用するため）
     _active_rows.clear()
     for r in rows:
         _active_rows.append(r as Dictionary)
-    var speaker := str((rows[0] as Dictionary).get("speaker", ""))
-    var portrait_path := str((rows[0] as Dictionary).get("portraits", (rows[0] as Dictionary).get("portrait", "")))
+
+    # テキストだけまとめて Dialog に渡す
     var lines: Array[String] = []
     for r_any in rows:
         var r: Dictionary = r_any
         lines.append(str(r.get("text", "")))
-    # 初期ポートレート（UI側にAPIがある前提）
-    if dialog_ui and dialog_ui.has_method("set_portrait_by_path"):
-        (dialog_ui as Dialog).set_portrait_by_path(portrait_path)
 
-    dialog_ui.show_lines(lines, speaker)
+    # speaker はここでは空で渡しておき、後から _apply_row(0) で設定する
+    dialog_ui.show_lines(lines, "")
+
+    # 先頭行の speaker / portrait を反映
+    _apply_row(0)
+
     return true
 
-# ダイアログの進行に合わせて行ごとに画像を切替
+func _apply_row(index: int) -> void:
+    if dialog_ui == null:
+        return
+    if index < 0 or index >= _active_rows.size():
+        return
+
+    var r: Dictionary = _active_rows[index]
+
+    # スピーカー名
+    var speaker := str(r.get("speaker", r.get("char", "")))
+    if dialog_ui.has_method("set_speaker"):
+        dialog_ui.call("set_speaker", speaker)
+
+    # ポートレート
+    var p := str(r.get("portraits", r.get("portrait", "")))
+    if dialog_ui.has_method("set_portrait_by_path"):
+        (dialog_ui as Dialog).set_portrait_by_path(p)
+
+
+# ダイアログの進行に合わせて行ごとに speaker / 画像を切替
 func _on_dialog_advanced(next_index: int) -> void:
     # next_index は現在の行インデックス（0起点）
     if _active_rows.is_empty():
         return
-    if next_index >= 0 and next_index < _active_rows.size():
-        var r: Dictionary = _active_rows[next_index]
-        var p := str(r.get("portraits", r.get("portrait", "")))
-        if dialog_ui and dialog_ui.has_method("set_portrait_by_path"):
-            (dialog_ui as Dialog).set_portrait_by_path(p)
+    if next_index < 0 or next_index >= _active_rows.size():
+        return
+
+    var row: Dictionary = _active_rows[next_index]
+
+    # dialogs.csv の列をそのまま使う想定
+    var id := String(row.get("id", ""))
+    var seq := int(row.get("seq", 0))
+
+    # ★ここが Story.gd などに割り込み処理を渡すフックポイント
+    if id != "":
+        line_started.emit(id, seq, row)
+
+    # 既存のポートレート切替など
+    _apply_row(next_index)

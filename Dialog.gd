@@ -165,6 +165,11 @@ func show_lines(lines: Array[String], speaker: String = "") -> void:
     character_name.text = speaker
     start_dialog()
 
+# Dialog.gd に追加（位置はどこでも良いですが、show_lines の近くが分かりやすいです）
+func set_speaker(name: String) -> void:
+    if character_name:
+        character_name.text = name
+
 func start_dialog() -> void:
     if content:
         content.text = ""

@@ -1,0 +1,6 @@
+key_id,name_ja,desc_ja,category,unique,max_stack,auto_apply,effect_type,effect_target,effect_value,sort_order
+guild_permit,ギルド許可証,正式なギルド商人として活動できる証書。特定イベントの解禁条件になる。,license,1,1,1,flag,guild_permit,1,10
+cargo_kit_s,増設荷車（小）,積載上限が20増える。,equipment,0,99,1,cargo_cap_add,,20,20
+cargo_kit_m,増設荷馬車,積載上限が50増える。,equipment,0,99,1,cargo_cap_add,,50,21
+toll_pass_pilton,ピルトン通行証,ピルトン地方での通行税が10％軽減される。,license,1,1,1,travel_tax_mult,Pilton,0.9,30
+guild_permit_father,父親のギルド許可証,父親から預かったギルド許可証,license,1,1,1,travel_tax_mult,Pilton,0.9,30

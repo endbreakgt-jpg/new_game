@@ -1,6 +1,7 @@
 extends Window
 class_name MoveWindow
 ## プレイヤーの移動先を選ぶ小窓（隣接都市リスト）
+signal travel_confirmed(origin: String, dest: String, days: int, path: Array)
 
 var world: World
 
@@ -16,6 +17,8 @@ var _close_btn: Button
 var _confirm_dlg: ConfirmationDialog = null
 var _click_guard_until: int = 0
 var _suppress_confirm_once: bool = false
+
+
 
 func _close_confirm_if_any() -> void:
     if is_instance_valid(_confirm_dlg):
@@ -163,17 +166,25 @@ func _open_confirm_for(cid: String, use_path: Array = []) -> void:
         if path.size() >= 2:
             days = int(res.get("days", 0))
             travel_cost = float(res.get("travel_cost", world.travel_cost_per_day * float(days)))
-            toll = float(res.get("toll", 0.0)) if world.pay_toll_on_depart else 0.0
+            if world.pay_toll_on_depart:
+                toll = float(res.get("toll", 0.0))
+            else:
+                toll = 0.0
         else:
             # no path found
             var err := AcceptDialog.new()
             err.title = "行けません"
             err.dialog_text = "その都市へ通じる道がありません。"
-            add_child(err); err.popup_centered(); return
+            add_child(err)
+            err.popup_centered()
+            return
     else:
         days = world._route_days(origin, cid)
         travel_cost = world.travel_cost_per_day * float(days)
-        toll = float(world._route_toll(origin, cid)) if world.pay_toll_on_depart else 0.0
+        if world.pay_toll_on_depart:
+            toll = float(world._route_toll(origin, cid))
+        else:
+            toll = 0.0
 
     var total: float = travel_cost + toll
     var cash: float = float(world.player.get("cash", 0.0))
@@ -188,6 +199,7 @@ func _open_confirm_for(cid: String, use_path: Array = []) -> void:
     var hazard: float = 0.0
     if has_method("_hazard_for"):
         hazard = _hazard_for(origin, cid)
+
     # 既存の確認ダイアログが可視なら重複生成しない
     if is_instance_valid(_confirm_dlg) and _confirm_dlg.visible:
         _confirm_dlg.grab_focus()
@@ -196,9 +208,11 @@ func _open_confirm_for(cid: String, use_path: Array = []) -> void:
     if is_instance_valid(_confirm_dlg) and not _confirm_dlg.visible:
         _confirm_dlg.queue_free()
         _confirm_dlg = null
+
     var dlg: ConfirmationDialog = ConfirmationDialog.new()
     _confirm_dlg = dlg
     dlg.title = "移動の確認"
+
     var text: String = "次の都市へ移動しますか？\n"
     text += "%s → %s\n" % [origin_name, dest_name]
     text += "日数: %d\n" % days
@@ -209,17 +223,20 @@ func _open_confirm_for(cid: String, use_path: Array = []) -> void:
     text += "合計: %.1f\n" % total
     text += "所持金: %.1f" % cash
     dlg.dialog_text = text
-    add_child(dlg)
-    if dlg.get_ok_button(): dlg.get_ok_button().text = "移動する"
-    if dlg.get_cancel_button(): dlg.get_cancel_button().text = "やめる"
 
-    
+    add_child(dlg)
+    if dlg.get_ok_button():
+        dlg.get_ok_button().text = "移動する"
+    if dlg.get_cancel_button():
+        dlg.get_cancel_button().text = "やめる"
 
     dlg.canceled.connect(func():
         _close_confirm_if_any()
     )
+
     dlg.confirmed.connect(func():
         var res_ok := false
+
         if world and world.has_method("player_move_via") and (path.size() >= 2 or use_path.size() >= 2):
             var p2: Array = []
             if use_path.size() >= 2:
@@ -227,21 +244,33 @@ func _open_confirm_for(cid: String, use_path: Array = []) -> void:
             else:
                 p2 = path
             # 資金チェックと同日到着チェックはHUD準拠
-            if cash >= total and (int(world.player.get("last_arrival_day", -999)) != world.day):
+            var arrived_today := int(world.player.get("last_arrival_day", -999)) == world.day
+            if (not arrived_today) and cash >= total:
                 res_ok = world.player_move_via(cid, p2)
         else:
             var r := world.can_player_move_to(cid)
             if bool(r.get("ok", false)):
                 res_ok = world.player_move(cid)
+
         if res_ok:
+            # ★ここでHUDに「自動移動開始」を依頼する
+            var root := get_tree().root
+            var hud := root.find_child("GameHUD", true, false)
+            if hud and hud.has_method("start_auto_travel"):
+                hud.start_auto_travel()
             hide()
         else:
             var err := AcceptDialog.new()
             err.title = "移動できません"
             err.dialog_text = "出発できませんでした。"
-            add_child(err); err.popup_centered()
+            add_child(err)
+            err.popup_centered()
     )
+
     dlg.popup_centered()
+
+
+
 func _on_selected(_i: int) -> void:
 
     # 既存の確認ダイアログが可視かつ同じ選択なら何もしない

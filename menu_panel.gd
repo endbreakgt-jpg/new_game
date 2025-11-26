@@ -334,10 +334,26 @@ func _connect_signals() -> void:
 func _rebuild() -> void:
     if world == null:
         return
-    info_day.text = "%d (T %d/%d)" % [
-    world.day, 
-    int(world.get("turn") if world.get("turn") != null else 0) + 1, 
-    int(world.get("turns_per_day") if world.get("turns_per_day") != null else 3)]
+
+    # --- 日付＋ターン表記（GameHUDと同じロジック） ---
+    var date_txt: String
+    if world.has_method("format_date"):
+        date_txt = world.format_date()
+    else:
+        date_txt = "Day %d" % world.day
+
+    var turn_now: int = 1
+    if world.get("turn") != null:
+        turn_now = int(world.get("turn")) + 1
+
+    var tpd: int = 3
+    if world.get("turns_per_day") != null:
+        tpd = int(world.get("turns_per_day"))
+
+    # 例: "1/3  T 1/3" のような表示になる
+    info_day.text = "%s  T %d/%d" % [date_txt, turn_now, tpd]
+
+    # --- 以降は既存ロジックそのまま ---
     var cid := String(world.player.get("city", ""))
     var moving := bool(world.player.get("enroute", false))
     if moving:
@@ -345,12 +361,15 @@ func _rebuild() -> void:
         info_city.text = "%s → %s" % [_city_name(cid), _city_name(dest)]
     else:
         info_city.text = _city_name(cid)
+
     info_cash.text = "%.1f" % float(world.player.get("cash", 0.0))
+
     var used := 0
     if world.has_method("_cargo_used"):
         used = int(world.call("_cargo_used", world.player))
     var cap := int(world.player.get("cap", 0))
     info_cargo.text = "%d / %d" % [used, cap]
+
 
 func _city_name(cid: String) -> String:
     return String(world.cities[cid]["name"]) if world and world.cities.has(cid) else cid
