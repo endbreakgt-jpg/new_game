@@ -105,6 +105,7 @@ func play(id: String) -> bool:
 
     # 先頭行の speaker / portrait を反映
     _apply_row(0)
+    _schedule_line_started(0)
 
     return true
 
@@ -135,7 +136,23 @@ func _on_dialog_advanced(next_index: int) -> void:
     if next_index < 0 or next_index >= _active_rows.size():
         return
 
-    var row: Dictionary = _active_rows[next_index]
+        # 既存のポートレート切替など
+    _apply_row(next_index)
+    _schedule_line_started(next_index)
+
+
+func _schedule_line_started(index: int) -> void:
+    # 次フレームで line_started を発火させ、UI更新とずれないようにする
+    call_deferred("_emit_line_started", index)
+
+
+func _emit_line_started(index: int) -> void:
+    if _active_rows.is_empty():
+        return
+    if index < 0 or index >= _active_rows.size():
+        return
+
+    var row: Dictionary = _active_rows[index]
 
     # dialogs.csv の列をそのまま使う想定
     var id := String(row.get("id", ""))
@@ -144,6 +161,3 @@ func _on_dialog_advanced(next_index: int) -> void:
     # ★ここが Story.gd などに割り込み処理を渡すフックポイント
     if id != "":
         line_started.emit(id, seq, row)
-
-    # 既存のポートレート切替など
-    _apply_row(next_index)
