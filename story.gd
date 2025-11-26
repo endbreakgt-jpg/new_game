@@ -8,6 +8,9 @@ class_name Story
 var world: World = null
 var dialog_player: DialogPlayer = null
 var dialog_ui: Dialog = null
+var _overlay_active: bool = false
+var _resume_info: Dictionary = {} # {"id":String, "seq":int}
+
 
 # プロローグ進行状態
 var prologue_done: bool = false
@@ -140,34 +143,17 @@ func _play_next_prologue() -> void:
 
 
 func _on_dialog_finished() -> void:
-    # Story が管理しているダイアログでなければ無視
-    if not _running_prologue:
+    if _overlay_active:
+        _overlay_active = false
+        var resume_id: String = String(_resume_info.get("id", ""))
+        var resume_seq: int = int(_resume_info.get("seq", 0))
+        _resume_info.clear()
+        if resume_id != "" and dialog_player:
+            _current_story_id = resume_id
+            _running_prologue = true
+            dialog_player.play_from_seq(resume_id, resume_seq)
         return
-    if _current_story_id == "":
-        return
 
-    var just_id := _current_story_id
-    _current_story_id = ""
-
-    match just_id:
-        "prologue_1":
-            _after_prologue_1()
-            prologue_step = 1
-        "prologue_5":
-            _after_prologue_5()
-            prologue_step = 2
-        "prologue_10":
-            _after_prologue_10()
-            prologue_step = 3
-        "prologue_15":
-            _after_prologue_15()
-            prologue_step = 4
-            _finish_prologue()
-            return
-        _:
-            pass
-
-    _play_next_prologue()
 
 
 func _finish_prologue() -> void:
@@ -192,22 +178,20 @@ func _on_dialog_line_started(id: String, seq: int, row: Dictionary) -> void:
     #     _on_prologue_2_seq_10(row)
     # ...と増やしていけるようにしておく
 
+# Story.gd へ追加
+func _show_system_message(text: String) -> void:
+    _resolve_dialog_ui()
+    if dialog_ui:
+        dialog_ui.show_lines([text], "System")
+
 func _on_prologue_1_seq_60(row: Dictionary) -> void:
-    # dialogs.csv: prologue_1,60 が表示された瞬間に呼ばれる想定
-
-    # World を解決
-    if world == null:
-        _resolve_world()
-    if world == null:
-        return
-
-    # 1) key_items に追加
-    if world.has_method("give_key_item"):
+    if world and world.has_method("give_key_item"):
         world.give_key_item("guild_permit_father", 1)
+    _resume_info = {"id": _current_story_id, "seq": 65}
+    _overlay_active = true
+    _current_story_id = "" # システムメッセージ完了時に Story を進めない
+    call_deferred("_show_system_message", "父親のギルド許可証を手に入れた")
 
-    # 2) システムメッセージ（name_ja ベタ書き版）
-    #   ※ name_ja は key_items.csv 上では「父親のギルド許可証」
-    _notify_world("父親のギルド許可証を手に入れた！")
 
 
 func _after_prologue_1() -> void:

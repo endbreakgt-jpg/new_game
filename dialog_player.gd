@@ -140,6 +140,24 @@ func _on_dialog_advanced(next_index: int) -> void:
     _apply_row(next_index)
     _schedule_line_started(next_index)
 
+func play_from_seq(id: String, start_seq: int) -> bool:
+    var rows: Array = rows_by_id.get(id, [])
+    var start_idx := -1
+    for i in range(rows.size()):
+        if int(rows[i].get("seq", 0)) >= start_seq:
+            start_idx = i; break
+    if start_idx == -1: return false
+    _active_rows.clear()
+    for i in range(start_idx, rows.size()):
+        _active_rows.append(rows[i])
+    var lines: Array[String] = []
+    for r_any in _active_rows:
+        lines.append(str((r_any as Dictionary).get("text", "")))
+    dialog_ui.show_lines(lines, "")
+    _apply_row(0)
+    _schedule_line_started(0)
+    return true
+
 
 func _schedule_line_started(index: int) -> void:
     # 次フレームで line_started を発火させ、UI更新とずれないようにする
