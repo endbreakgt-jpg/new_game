@@ -4,7 +4,7 @@ prologue_1,10,主人公,大丈夫か、父さん。,res://ui/portraits/hero_01.p
 prologue_1,15,父親,いや、まいったな。,res://ui/portraits/father_01.png
 prologue_1,20,父親,よりによって、商売道具の足を痛めるとは……。,res://ui/portraits/father_01.png
 prologue_1,25,主人公,しょうがないよ。治るまでは安静にしてなきゃ。,res://ui/portraits/hero_01.png
-prologue_1,30,父親,いや、しかし契約が一件残っているんだ。,res://ui/portraits/father_01.png
+prologue_1,30,父親,だがな、契約が一件残っているんだ。,res://ui/portraits/father_01.png
 prologue_1,35,父親,Piltonへ荷物を届けに行かないと……。,res://ui/portraits/father_01.png
 prologue_1,40,主人公,Pilton？ それなら僕も行ったことあるし、代わりに届けに行くよ。,res://ui/portraits/hero_01.png
 prologue_1,45,父親,お前が？,res://ui/portraits/father_01.png
@@ -27,11 +27,11 @@ prologue_5,15,主人公,よし、荷物を届けに行こう。,res://ui/portrai
 prologue_5,20,主人公,（大きな屋敷だ。門番の人に話しかければいいのかな……）,res://ui/portraits/hero_01.png
 prologue_5,25,主人公,あの、すみません。,res://ui/portraits/hero_01.png
 prologue_5,30,門番,ん？　なんだ、坊主。,res://ui/portraits/guard_01.png
-prologue_5,35,主人公,お客さまに荷物を届けに来たんですけど。,res://ui/portraits/hero_01.png
+prologue_5,35,主人公,『客』さまに荷物を届けに来たんですけど。,res://ui/portraits/hero_01.png
 prologue_5,40,主人公,その……父が怪我をしていまして、代理で。,res://ui/portraits/hero_01.png
 prologue_5,45,門番,ほう。,res://ui/portraits/guard_01.png
 prologue_5,50,門番,確かに、その荷物のことはあらかじめ聞いている。ここで待っていてくれ。,res://ui/portraits/guard_01.png
-prologue_5,55,客,なに、父親殿の息子か。,res://ui/portraits/client_01.png
+prologue_5,55,客,なに、『父親』殿の息子か。,res://ui/portraits/client_01.png
 prologue_5,60,主人公,は、はい。これ、父から預かったギルド許可証です。,res://ui/portraits/hero_01.png
 prologue_5,65,客,……ふむ、確かにギルド許可証だな。荷物も問題なかった。,res://ui/portraits/client_01.png
 prologue_5,70,客,大丈夫だろう。ご苦労だったな。代金はギルドから受け取ってくれ。,res://ui/portraits/client_01.png
@@ -42,8 +42,8 @@ prologue_10,15,主人公,お客さまに荷物を配達しましたので、報�
 prologue_10,20,受付,かしこまりました。ギルド許可証と受取証書の提示をお願いします。,res://ui/portraits/clerk_01.png
 prologue_10,25,主人公,はい。,res://ui/portraits/hero_01.png
 prologue_10,30,受付,あら？ この許可証は……。,res://ui/portraits/clerk_01.png
-prologue_10,35,主人公,あ！ 言ってませんでした。僕、息子なんです。父の。,res://ui/portraits/hero_01.png
-prologue_10,40,主人公,父は今、足を怪我していて……急ぎの契約があるって。代わりに来たんです。,res://ui/portraits/hero_01.png
+prologue_10,35,主人公,あ！ 言ってませんでした。僕、息子なんです。『父親』の。,res://ui/portraits/hero_01.png
+prologue_10,40,主人公,父は今、足を怪我していて……でも急ぎの契約があるって。代わりに来たんです。,res://ui/portraits/hero_01.png
 prologue_10,45,受付,ああ、なるほど。そうなんですね。,res://ui/portraits/clerk_01.png
 prologue_10,50,受付,（ど、どうしよう。委任状もなしに……？）,res://ui/portraits/clerk_01.png
 prologue_10,55,受付,（ホントは駄目なんだけど……）,res://ui/portraits/clerk_01.png
@@ -53,7 +53,7 @@ prologue_10,70,ギルド長,キミ、名前は？,res://ui/portraits/guildmaster
 prologue_10,75,主人公,！,res://ui/portraits/hero_01.png
 prologue_10,80,主人公,はい、『主人公』といいます。,res://ui/portraits/hero_01.png
 prologue_10,85,ギルド長,やはり、な。,res://ui/portraits/guildmaster_01.png
-prologue_10,90,ギルド長,キミのことは父上からよく聞かされていたよ。,res://ui/portraits/guildmaster_01.png
+prologue_10,90,ギルド長,キミのことは『父親』からよく聞かされていたよ。,res://ui/portraits/guildmaster_01.png
 prologue_10,95,ギルド長,大方、私が何とかしてくれると思ったんだろう。,res://ui/portraits/guildmaster_01.png
 prologue_10,100,主人公,は、はぁ……。,res://ui/portraits/hero_01.png
 prologue_10,105,ギルド長,おい、精算してやれ。,res://ui/portraits/guildmaster_01.png
@@ -71,16 +71,16 @@ prologue_10,160,主人公,あ、ありがとうございます。,res://ui/portr
 prologue_10,165,ギルド長,気を付けて帰るといい。父上にもよろしく伝えてくれ。,res://ui/portraits/guildmaster_01.png
 prologue_10,170,主人公,はい、失礼します。,res://ui/portraits/hero_01.png
 prologue_10,175,主人公,……よし、何とか代役をこなすことが出来た。,res://ui/portraits/hero_01.png
-prologue_10,180,主人公,一つの契約だけで、いろんな人と話したな……。,res://ui/portraits/hero_01.png
+prologue_10,180,主人公,一つの契約だけで、いろんな人と話したな。,res://ui/portraits/hero_01.png
 prologue_10,185,主人公,これが商人の仕事なんだ……。,res://ui/portraits/hero_01.png
 prologue_10,190,主人公,さ、帰ろう。,res://ui/portraits/hero_01.png
 prologue_15,5,主人公,ただいま。,res://ui/portraits/hero_01.png
 prologue_15,10,父親,おお、お帰り。大丈夫だったか？,res://ui/portraits/father_01.png
 prologue_15,15,主人公,荷物を届けて代金を回収できた、って意味なら大丈夫だったよ。,res://ui/portraits/hero_01.png
 prologue_15,20,主人公,はい、これ。,res://ui/portraits/hero_01.png
-prologue_15,25,父親,含むじゃないか。,res://ui/portraits/father_01.png
-prologue_15,30,父親,それを分かって送り出したのは、俺だがな。,res://ui/portraits/father_01.png
-prologue_15,35,父親,だけど、ちゃんとこなせたみたいだな。,res://ui/portraits/father_01.png
+prologue_15,25,父親,はは、含みがあるな。,res://ui/portraits/father_01.png
+prologue_15,30,父親,それを分かって送り出したのは、俺だが……,res://ui/portraits/father_01.png
+prologue_15,35,父親,だけど、ちゃんとこなせたみたいじゃないか。,res://ui/portraits/father_01.png
 prologue_15,40,主人公,……まあね。,res://ui/portraits/hero_01.png
 prologue_15,45,父親,お前には、商人としての読み書きや計算は教えてきた。,res://ui/portraits/father_01.png
 prologue_15,50,父親,だが俺もまだまだ元気だったからな。,res://ui/portraits/father_01.png
