@@ -17,6 +17,7 @@ var step_turn_btn: Button
 var move_btn: Button
 
 var info_btn: Button
+var trust_btn: Button
 
 # 情報（噂）ウィンドウ
 var rumor_win: Window = null
@@ -36,6 +37,9 @@ var dlg_load_confirm: ConfirmationDialog
 var dlg_info: AcceptDialog
 var _pending_slot: int = 0
 
+# 信用ウィンドウ
+var trust_win: Window = null
+var trust_list: VBoxContainer = null
 
 # ドラッグ用
 var _dragging := false
@@ -169,7 +173,7 @@ func _build_content_area(parent: VBoxContainer) -> void:
     _ensure_button(row, "ContractBtn", "契約")
     info_btn = _ensure_button(row, "InfoBtn", "情報")
     inv_btn = _ensure_button(row, "InvBtn", "Inv")
-
+    trust_btn = _ensure_button(row, "TrustBtn", "信用") 
     # --- Info Area ---
     var sep := vb.get_node_or_null("HSeparator") as HSeparator
     if sep == null:
@@ -329,6 +333,9 @@ func _connect_signals() -> void:
     if inv_btn and not inv_btn.pressed.is_connected(Callable(self, "_on_inv")):
         inv_btn.pressed.connect(_on_inv)
 
+    # ★ 追加：信用
+    if trust_btn and not trust_btn.pressed.is_connected(Callable(self, "_on_trust")):
+        trust_btn.pressed.connect(_on_trust)
 
 # --- Info 更新 ---
 func _rebuild() -> void:
@@ -478,6 +485,18 @@ func _on_move() -> void:
 func _on_inv() -> void:
     if hud and hud.has_method("_open_inventory_window"):
         hud.call("_open_inventory_window")
+
+func _on_trust() -> void:
+    _ensure_trust_window()
+    _rebuild_trust_list()
+
+    if trust_win:
+        # 位置とサイズをHUD共通ロジックに合わせる
+        _size_and_center(trust_win)
+        # Window は popup_centered() で前面＆表示
+        trust_win.popup_centered()
+        trust_win.grab_focus()
+
 
 func _on_close() -> void:
     visible = false
@@ -1160,3 +1179,154 @@ func _stars_from_offer(offer: Dictionary) -> int:
             return clamp(as_num, 1, 5)
 
     return 1
+
+func _ensure_trust_window() -> void:
+    if trust_win != null and is_instance_valid(trust_win):
+        return
+
+    trust_win = Window.new()
+    trust_win.name = "TrustWindow"
+    trust_win.title = "信用度"
+    trust_win.min_size = Vector2i(360, 240)
+    trust_win.size = Vector2i(420, 280)
+    trust_win.unresizable = false
+
+    # 閉じる操作で非表示にする
+    if trust_win.has_signal("close_requested"):
+        trust_win.close_requested.connect(func():
+            if trust_win:
+                trust_win.hide()
+        )
+
+    var margin := MarginContainer.new()
+    margin.name = "Margin"
+    margin.add_theme_constant_override("margin_left", 12)
+    margin.add_theme_constant_override("margin_right", 12)
+    margin.add_theme_constant_override("margin_top", 10)
+    margin.add_theme_constant_override("margin_bottom", 10)
+    margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    margin.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    trust_win.add_child(margin)
+    margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+
+    var root := VBoxContainer.new()
+    root.name = "Root"
+    root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    root.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    margin.add_child(root)
+
+    var header := Label.new()
+    header.name = "Header"
+    header.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    header.text = "現在知られている地方ごとの信用度です。"
+    root.add_child(header)
+
+    var scroll := ScrollContainer.new()
+    scroll.name = "Scroll"
+    scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    root.add_child(scroll)
+
+    trust_list = VBoxContainer.new()
+    trust_list.name = "List"
+    trust_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    trust_list.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+    scroll.add_child(trust_list)
+
+    var btn_row := HBoxContainer.new()
+    btn_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    root.add_child(btn_row)
+
+    var close_button := Button.new()
+    close_button.text = "閉じる"
+    close_button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+    close_button.pressed.connect(func():
+        if trust_win:
+            trust_win.hide()
+    )
+    btn_row.add_child(close_button)
+
+    # シーンツリーに追加
+    get_tree().root.add_child(trust_win)
+    _size_and_center(trust_win)
+
+func _rebuild_trust_list() -> void:
+    if trust_list == null:
+        return
+
+    # 一旦クリア
+    for child in trust_list.get_children():
+        child.queue_free()
+
+    if world == null:
+        var lbl_world := Label.new()
+        lbl_world.text = "World が見つからないため信用情報を表示できません。"
+        trust_list.add_child(lbl_world)
+        return
+
+    # プロヴィンス別の生データ（0〜100 の想定）
+    var rep_dict: Dictionary = {}
+    var any_rep = world.get("rep_by_province")
+    if typeof(any_rep) == TYPE_DICTIONARY:
+        rep_dict = any_rep
+
+    if rep_dict.is_empty():
+        var lbl_empty := Label.new()
+        lbl_empty.text = "まだ信用度データがありません。"
+        trust_list.add_child(lbl_empty)
+        return
+
+    # 「プレイヤーから見えている」プロヴィンスを抽出
+    var visible_provs: Dictionary = {}
+    var any_cities = world.get("cities")
+    if typeof(any_cities) == TYPE_DICTIONARY:
+        var cities: Dictionary = any_cities
+        for cid_any in cities.keys():
+            var cid := String(cid_any)
+            var unlocked := true
+            if world.has_method("is_city_unlocked"):
+                unlocked = bool(world.call("is_city_unlocked", cid))
+            if not unlocked:
+                continue
+
+            var city_info = cities.get(cid, {}) as Dictionary
+            var prov := String(city_info.get("province", ""))
+            if prov != "":
+                visible_provs[prov] = true
+
+    var filter_by_visibility := not visible_provs.is_empty()
+
+    # プロヴィンスIDでソート（"Pilton","Tolkken"...）
+    var prov_ids: Array = rep_dict.keys()
+    prov_ids.sort_custom(func(a, b):
+        return String(a) < String(b)
+    )
+
+    var shown_any := false
+    for prov_any in prov_ids:
+        var prov_id := String(prov_any)
+        if filter_by_visibility and not visible_provs.has(prov_id):
+            continue
+
+        shown_any = true
+        var v = rep_dict.get(prov_id, 0.0)
+        var value: float = 0.0
+
+        match typeof(v):
+            TYPE_FLOAT:
+                value = float(v)
+            TYPE_INT:
+                value = float(int(v))
+            _:
+                value = float(v)
+
+        var line := Label.new()
+        line.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        # ひとまず数値のみ表示（将来はランク名を足す）
+        line.text = "%s：%.1f" % [prov_id, value]
+        trust_list.add_child(line)
+
+    if not shown_any:
+        var lbl_none := Label.new()
+        lbl_none.text = "まだ訪れた地方がありません。"
+        trust_list.add_child(lbl_none)
