@@ -166,16 +166,12 @@ func _on_dialog_finished() -> void:
 
     match just_id:
         "prologue_1":
-            _after_prologue_1()
             prologue_step = 1
         "prologue_5":
-            _after_prologue_5()
             prologue_step = 2
         "prologue_10":
-            _after_prologue_10()
             prologue_step = 3
         "prologue_15":
-            _after_prologue_15()
             prologue_step = 4
             _finish_prologue()
             return
@@ -194,18 +190,6 @@ func _finish_prologue() -> void:
 
 # === 各パート終了時の“間に挟まる処理” ====================================
 
-func _on_dialog_line_started(id: String, seq: int, row: Dictionary) -> void:
-    # ここで「どの id / seq にどう反応するか」を振り分ける
-
-    # ★今回のテスト：prologue_1 の 60 行目
-    if id == "prologue_1" and seq == 60:
-        _on_prologue_1_seq_60(row)
-
-    # 将来的には:
-    # if id == "prologue_2" and seq == 10:
-    #     _on_prologue_2_seq_10(row)
-    # ...と増やしていけるようにしておく
-
 # Story.gd へ追加
 func _show_system_message(text: String) -> void:
     _resolve_dialog_ui()
@@ -219,48 +203,6 @@ func _on_prologue_1_seq_60(row: Dictionary) -> void:
     _overlay_active = true
     _current_story_id = "" # システムメッセージ完了時に Story を進めない
     call_deferred("_show_system_message", "父親のギルド許可証を手に入れた")
-
-
-
-func _after_prologue_1() -> void:
-    # Durton 自宅での会話を終え、父親から
-    # ・ギルド許可証を借りる
-    # ・荷物を預かる
-    # ・旅費を受け取る
-    # ……という流れをログにだけ反映（数値は後で詰める想定）
-    _notify_world("父親からギルド許可証と荷物、それに旅費を預かった。")
-
-    # 将来的にはここで player.cash や cargo を調整しても良い
-    # if world:
-    #     var p := world.player
-    #     p["cash"] = float(p.get("cash", 0.0)) + 100.0
-    #     world.player = p
-
-func _after_prologue_5() -> void:
-    # Pilton の屋敷で荷物を渡し終えたあとの一息
-    _notify_world("Pilton での配達を終えた。")
-
-func _after_prologue_10() -> void:
-    # ギルドで配達完了報告と代金受け取り
-    _notify_world("Pilton 商人ギルドで配達の代金を受け取り、Durton への帰路についた。")
-
-func _after_prologue_15() -> void:
-    # Durton 帰宅後、父親と対話して「行商人になる」決意が固まる場面
-    _notify_world("父親に代役を認められ、行商人としての一歩を踏み出した。")
-
-func _on_dialog_line_started_v2(id: String, seq: int, row: Dictionary) -> void:
-    if _maybe_start_pending_overlay(id, seq):
-        return
-    if id == "prologue_1" and seq == 60:
-        _on_prologue_1_seq_60_v2(row)
-
-func _on_prologue_1_seq_60_v2(row: Dictionary) -> void:
-    if world and world.has_method("give_key_item"):
-        world.give_key_item("guild_permit_father", 1)
-    if _pending_system_msg == "":
-        _pending_system_msg = "父親のギルド許可証を手に入れた"
-        _pending_resume_id = _current_story_id
-        _pending_resume_seq = 65
 
 func _maybe_start_pending_overlay(id: String, seq: int) -> bool:
     if _pending_system_msg == "":
@@ -281,12 +223,40 @@ func _maybe_start_pending_overlay(id: String, seq: int) -> bool:
     return true
 
 func _connect_dialog_triggers() -> void:
-    # dialog_player を解決
     _resolve_dialog_player()
     if dialog_player == null:
         return
-
-    # 二重接続防止
-    var c := Callable(self, "_on_dialog_line_started_v2")
+    var c := Callable(self, "_on_dialog_line_started")
     if not dialog_player.line_started.is_connected(c):
         dialog_player.line_started.connect(c)
+
+# 追加: 再開予約
+var _resume_after_break: Dictionary = {} # {"id":String, "seq":int}
+
+func _on_dialog_line_started(id: String, seq: int, row: Dictionary) -> void:
+    # 既存の pending オーバーレイがあれば先に処理
+    if _maybe_start_pending_overlay(id, seq):
+        return
+    if id == "prologue_1" and seq == 55:
+        _queue_break_and_resume(id, 60)
+        return
+    # 既存の seq==60 トリガーなどはそのまま
+
+func _queue_break_and_resume(id: String, resume_seq: int) -> void:
+    _resume_after_break = {"id": id, "seq": resume_seq}
+    _current_story_id = ""  # 以降の _on_dialog_finished で誤進行しないようにクリア
+    _running_prologue = false
+    # ダイアログを一旦閉じる
+    if dialog_ui:
+        dialog_ui.stop_dialog()
+    # 少し後で再開（演出用に 0.2〜0.5秒を好みで）
+    call_deferred("_resume_story_after_break")
+
+func _resume_story_after_break() -> void:
+    var rid := String(_resume_after_break.get("id", ""))
+    var rseq := int(_resume_after_break.get("seq", 0))
+    _resume_after_break.clear()
+    if dialog_player and rid != "" and rseq > 0:
+        _current_story_id = rid
+        _running_prologue = true
+        dialog_player.play_from_seq(rid, rseq)
