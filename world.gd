@@ -11,6 +11,30 @@ signal turn_advanced(turn: int, day: int)
 signal supply_event(city_id: String, product_id: String, qty: int, mode: String, flavor: String)
 signal weekly_report(province: String, payload: Dictionary)
 
+# --- Tutorial state / locks (TUT-STATE) ---
+signal tutorial_state_changed(prev: String, cur: String)
+signal tutorial_locks_changed(locks: Dictionary)
+
+const TUT_STATE_NONE := "none"
+const TUT_STATE_PROLOGUE := "prologue"
+const TUT_STATE_TUT1 := "tut1"
+const TUT_STATE_TUT2 := "tut2"
+const TUT_STATE_TUT3 := "tut3"
+
+const TUT_LOCK_TRADE := "trade"
+const TUT_LOCK_MAP := "map"
+const TUT_LOCK_MOVE := "move"
+const TUT_LOCK_INV := "inv"
+const TUT_LOCK_INFO := "info"
+const TUT_LOCK_CONTRACT := "contract"
+const TUT_LOCK_TRUST := "trust"
+const TUT_LOCK_STEP := "step"
+const TUT_LOCK_STEP_TURN := "step_turn"
+
+var tutorial_state: String = TUT_STATE_NONE
+# key -> reason(String).  存在する=ロック中
+var tutorial_locks: Dictionary = {}
+
 @export var data_dir: String = "res://data/"
 @export var day_seconds: float = 0.5
 
@@ -478,6 +502,84 @@ func is_paused() -> bool:
     return _paused
 
 # 日の進行度（0.0〜1.0）
+
+# --- UI / System message helper ---
+func send_system_message(msg: String) -> void:
+    # UI側から呼ぶための公開口。Story側の _world_message と同じ挙動。
+    _world_message(msg)
+
+# --- Tutorial API ---
+func get_tutorial_state() -> String:
+    return tutorial_state
+
+func set_tutorial_state(state: String, apply_profile: bool = false, log_reason: String = "") -> void:
+    var prev := tutorial_state
+    tutorial_state = state
+    if apply_profile:
+        apply_tutorial_profile(state)
+    if log_reason != "":
+        _log("[TUT] state %s -> %s (%s)" % [prev, tutorial_state, log_reason])
+    else:
+        _log("[TUT] state %s -> %s" % [prev, tutorial_state])
+    tutorial_state_changed.emit(prev, tutorial_state)
+    # UIが状態変化を拾えるように（MenuPanel が world_updated に繋いでいる）
+    world_updated.emit()
+
+func get_tutorial_locks() -> Dictionary:
+    return tutorial_locks.duplicate(true)
+
+func is_tutorial_locked(key: String) -> bool:
+    return tutorial_locks.has(key)
+
+func get_tutorial_lock_reason(key: String) -> String:
+    if not tutorial_locks.has(key):
+        return ""
+    return String(tutorial_locks.get(key, ""))
+
+func set_tutorial_lock(key: String, locked: bool, reason: String = "") -> void:
+    var changed := false
+    if locked:
+        if not tutorial_locks.has(key) or String(tutorial_locks.get(key, "")) != reason:
+            tutorial_locks[key] = reason
+            changed = true
+    else:
+        if tutorial_locks.has(key):
+            tutorial_locks.erase(key)
+            changed = true
+    if changed:
+        var flag := "OFF"
+        if locked:
+            flag = "ON"
+        _log("[TUT] lock %s=%s" % [key, flag])
+        tutorial_locks_changed.emit(get_tutorial_locks())
+        world_updated.emit()
+func clear_tutorial_locks() -> void:
+    if tutorial_locks.is_empty():
+        return
+    tutorial_locks.clear()
+    _log("[TUT] locks cleared")
+    tutorial_locks_changed.emit(get_tutorial_locks())
+    world_updated.emit()
+
+func apply_tutorial_profile(state: String) -> void:
+    # 状態に応じた“デフォルトロック”を適用（必要になったら拡張）
+    # ここは台本に合わせて随時調整していく前提。
+    clear_tutorial_locks()
+    match state:
+        TUT_STATE_PROLOGUE:
+            # プロローグ中は操作させない（誤操作で台本が破綻しないように）
+            set_tutorial_lock(TUT_LOCK_TRADE, true, "プロローグ中はまだ取引できません。")
+            set_tutorial_lock(TUT_LOCK_MAP, true, "プロローグ中はまだ地図を開けません。")
+            set_tutorial_lock(TUT_LOCK_MOVE, true, "プロローグ中はまだ移動できません。")
+            set_tutorial_lock(TUT_LOCK_INV, true, "プロローグ中はまだ所持品を確認できません。")
+            set_tutorial_lock(TUT_LOCK_INFO, true, "プロローグ中はまだ情報を確認できません。")
+            set_tutorial_lock(TUT_LOCK_CONTRACT, true, "プロローグ中はまだ契約を確認できません。")
+            set_tutorial_lock(TUT_LOCK_TRUST, true, "プロローグ中はまだ信用を確認できません。")
+            set_tutorial_lock(TUT_LOCK_STEP, true, "プロローグ中は時間を進められません。")
+            set_tutorial_lock(TUT_LOCK_STEP_TURN, true, "プロローグ中は時間を進められません。")
+        _:
+            pass
+
 func get_day_progress() -> float:
     if _paused or _timer == null or _timer.wait_time <= 0.0:
         return 0.0
@@ -2513,6 +2615,12 @@ func _make_save_payload() -> Dictionary:
         "supply_count_by_city": (supply_count_by_city if "supply_count_by_city" in self else {}),
         "supply_count_by_pid": (supply_count_by_pid if "supply_count_by_pid" in self else {}),
         "event_log": (event_log if "event_log" in self else []),
+        # --- tutorial ---
+        "tutorial": {
+            "state": tutorial_state,
+            "locks": tutorial_locks,
+        },
+
         # --- contracts ---
         "contracts": {
             "offers": _contract_offers,
@@ -2532,6 +2640,16 @@ func _apply_save_payload(data: Dictionary) -> void:
     if state.has("price"):  price  = state.get("price")  as Dictionary
     if state.has("stock"):  stock  = state.get("stock")  as Dictionary
     if state.has("_shortage_ema"): _shortage_ema = state.get("_shortage_ema") as Dictionary
+
+    # --- tutorial ---
+    if state.has("tutorial"):
+        var tut: Dictionary = state.get("tutorial") as Dictionary
+        var prev_state := tutorial_state
+        tutorial_state = String(tut.get("state", tutorial_state))
+        tutorial_locks = (tut.get("locks", {}) as Dictionary)
+        # ロード直後にUIが追従できるようシグナル発火
+        tutorial_state_changed.emit(prev_state, tutorial_state)
+        tutorial_locks_changed.emit(get_tutorial_locks())
 
     # --- contracts ---
     if state.has("contracts"):
