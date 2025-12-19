@@ -377,21 +377,65 @@ func _rebuild() -> void:
     var cap := int(world.player.get("cap", 0))
     info_cargo.text = "%d / %d" % [used, cap]
 
+    _apply_tutorial_button_states()
+
+func _apply_tutorial_button_states() -> void:
+    if world == null:
+        return
+    if not world.has_method("is_tutorial_locked"):
+        return
+    if trade_btn: trade_btn.disabled = world.is_tutorial_locked(World.TUT_LOCK_TRADE)
+    if map_btn:   map_btn.disabled   = world.is_tutorial_locked(World.TUT_LOCK_MAP)
+    if move_btn:  move_btn.disabled  = world.is_tutorial_locked(World.TUT_LOCK_MOVE)
+    if inv_btn:   inv_btn.disabled   = world.is_tutorial_locked(World.TUT_LOCK_INV)
+    if info_btn:  info_btn.disabled  = world.is_tutorial_locked(World.TUT_LOCK_INFO)
+    if trust_btn: trust_btn.disabled = world.is_tutorial_locked(World.TUT_LOCK_TRUST)
+    if step_btn:  step_btn.disabled  = world.is_tutorial_locked(World.TUT_LOCK_STEP)
+    if step_turn_btn: step_turn_btn.disabled = world.is_tutorial_locked(World.TUT_LOCK_STEP_TURN)
+    var contract_btn := panel.get_node("Frame/Margin/VBox/Row").get_node_or_null("ContractBtn") as Button
+    if contract_btn:
+        contract_btn.disabled = world.is_tutorial_locked(World.TUT_LOCK_CONTRACT)
+
+func _tutorial_guard(lock_key: String, fallback_msg: String) -> bool:
+    if world == null:
+        return true
+    if not world.has_method("is_tutorial_locked"):
+        return true
+    if not world.is_tutorial_locked(lock_key):
+        return true
+    var msg := fallback_msg
+    if world.has_method("get_tutorial_lock_reason"):
+        var r := world.get_tutorial_lock_reason(lock_key)
+        if r != "":
+            msg = r
+    if world.has_method("send_system_message"):
+        world.send_system_message(msg)
+    elif world.has_method("_world_message"):
+        world.call("_world_message", msg)
+    else:
+        _show_info(msg)
+    return false
 
 func _city_name(cid: String) -> String:
     return String(world.cities[cid]["name"]) if world and world.cities.has(cid) else cid
 
 # --- Buttons ---
 func _on_trade() -> void:
+    if not _tutorial_guard(World.TUT_LOCK_TRADE, "チュートリアル中はまだ取引できません。"):
+        return
     if hud and hud.has_method("_on_trade_btn"):
         hud.call("_on_trade_btn")
 
 func _on_map() -> void:
+    if not _tutorial_guard(World.TUT_LOCK_MAP, "チュートリアル中はまだ地図を開けません。"):
+        return
     if hud and hud.has_method("_on_map_btn"):
         hud.call("_on_map_btn")
 
 func _on_step() -> void:
     if world == null:
+        return
+    if not _tutorial_guard(World.TUT_LOCK_STEP, "チュートリアル中は時間を進められません。"):
         return
     if world.is_paused():
         world.step_one_day()
@@ -399,9 +443,10 @@ func _on_step() -> void:
         world.pause()
         world.step_one_day()
 
-
 func _on_step_turn() -> void:
     if world == null:
+        return
+    if not _tutorial_guard(World.TUT_LOCK_STEP_TURN, "チュートリアル中は時間を進められません。"):
         return
     if world.is_paused():
         world.step_one_turn()
@@ -412,6 +457,8 @@ func _on_step_turn() -> void:
 func _on_info() -> void:
     if world == null:
         _show_info("World が見つかりません。")
+        return
+    if not _tutorial_guard(World.TUT_LOCK_INFO, "チュートリアル中はまだ情報を確認できません。"):
         return
     var moving := bool(world.player.get("enroute", false))
     if moving:
@@ -479,14 +526,20 @@ func _populate_rumors() -> void:
             rumor_win.hide()
         )
 func _on_move() -> void:
+    if not _tutorial_guard(World.TUT_LOCK_MOVE, "チュートリアル中はまだ移動できません。"):
+        return
     if hud and hud.has_method("_open_move_window"):
         hud.call("_open_move_window")
 
 func _on_inv() -> void:
+    if not _tutorial_guard(World.TUT_LOCK_INV, "チュートリアル中はまだ所持品を開けません。"):
+        return
     if hud and hud.has_method("_open_inventory_window"):
         hud.call("_open_inventory_window")
 
 func _on_trust() -> void:
+    if not _tutorial_guard(World.TUT_LOCK_TRUST, "チュートリアル中はまだ信用を確認できません。"):
+        return
     _ensure_trust_window()
     _rebuild_trust_list()
 
@@ -496,7 +549,6 @@ func _on_trust() -> void:
         # Window は popup_centered() で前面＆表示
         trust_win.popup_centered()
         trust_win.grab_focus()
-
 
 func _on_close() -> void:
     visible = false
@@ -611,6 +663,8 @@ func _buy_rumor(mode: String) -> void:
 # --- 3) 追記: 契約UI（ファイル末尾にそのまま貼り付け） ---
 # 押下→契約ウインドウ
 func _on_contracts() -> void:
+    if not _tutorial_guard(World.TUT_LOCK_CONTRACT, "チュートリアル中はまだ契約を確認できません。"):
+        return
     _open_contracts_window()
 
 # 契約ウインドウ生成
