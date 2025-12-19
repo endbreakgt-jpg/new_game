@@ -47,13 +47,13 @@ func start_prologue() -> void:
     if _running_prologue:
         return
 
+    # チュートリアル状態（プロローグ）
+    if world != null and world.has_method("set_tutorial_state"):
+        world.set_tutorial_state(World.TUT_STATE_PROLOGUE, true, "start_prologue")
+
     _running_prologue = true
     prologue_step = 0
     _play_next_prologue()
-
-
-# === 解決系ユーティリティ ================================================
-
 func _resolve_world() -> void:
     if world != null and is_instance_valid(world):
         return
@@ -185,9 +185,12 @@ func _finish_prologue() -> void:
     _running_prologue = false
     _notify_world("プロローグが終わりました。")
 
-
-# === プロローグ途中に挟まる処理 ====================================
-
+    # 次フェーズへ（現時点では tut1 へ。必要に応じて tut1開始演出側へ移してOK）
+    if world != null and world.has_method("set_tutorial_state"):
+        # プロローグ用ロックを解除（apply_profile=false で locks は維持されるので明示解除）
+        if world.has_method("clear_tutorial_locks"):
+            world.clear_tutorial_locks()
+        world.set_tutorial_state(World.TUT_STATE_TUT1, false, "finish_prologue")
 func _on_dialog_line_started(id: String, seq: int, row: Dictionary) -> void:
     _last_line_info = {"id": id, "seq": seq, "row": row}
     if _maybe_start_pending_overlay(id, seq):
