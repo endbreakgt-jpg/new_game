@@ -1,0 +1,181 @@
+# menu_panel.gd : TUT-STATE パッチ（関数ごと置換）
+
+## _rebuild
+func _rebuild() -> void:
+    if world == null:
+        return
+
+    # --- 日付＋ターン表記（GameHUDと同じロジック） ---
+    var date_txt: String
+    if world.has_method("format_date"):
+        date_txt = world.format_date()
+    else:
+        date_txt = "Day %d" % world.day
+
+    var turn_now: int = 1
+    if world.get("turn") != null:
+        turn_now = int(world.get("turn")) + 1
+
+    var tpd: int = 3
+    if world.get("turns_per_day") != null:
+        tpd = int(world.get("turns_per_day"))
+
+    # 例: "1/3  T 1/3" のような表示になる
+    info_day.text = "%s  T %d/%d" % [date_txt, turn_now, tpd]
+
+    # --- 以降は既存ロジックそのまま ---
+    var cid := String(world.player.get("city", ""))
+    var moving := bool(world.player.get("enroute", false))
+    if moving:
+        var dest := String(world.player.get("dest", ""))
+        info_city.text = "%s → %s" % [_city_name(cid), _city_name(dest)]
+    else:
+        info_city.text = _city_name(cid)
+
+    info_cash.text = "%.1f" % float(world.player.get("cash", 0.0))
+
+    var used := 0
+    if world.has_method("_cargo_used"):
+        used = int(world.call("_cargo_used", world.player))
+    var cap := int(world.player.get("cap", 0))
+    info_cargo.text = "%d / %d" % [used, cap]
+
+    _apply_tutorial_button_states()
+
+
+
+## _apply_tutorial_button_states
+func _apply_tutorial_button_states() -> void:
+    if world == null:
+        return
+    if not world.has_method("is_tutorial_locked"):
+        return
+    if trade_btn: trade_btn.disabled = world.is_tutorial_locked(World.TUT_LOCK_TRADE)
+    if map_btn:   map_btn.disabled   = world.is_tutorial_locked(World.TUT_LOCK_MAP)
+    if move_btn:  move_btn.disabled  = world.is_tutorial_locked(World.TUT_LOCK_MOVE)
+    if inv_btn:   inv_btn.disabled   = world.is_tutorial_locked(World.TUT_LOCK_INV)
+    if info_btn:  info_btn.disabled  = world.is_tutorial_locked(World.TUT_LOCK_INFO)
+    if trust_btn: trust_btn.disabled = world.is_tutorial_locked(World.TUT_LOCK_TRUST)
+    if step_btn:  step_btn.disabled  = world.is_tutorial_locked(World.TUT_LOCK_STEP)
+    if step_turn_btn: step_turn_btn.disabled = world.is_tutorial_locked(World.TUT_LOCK_STEP_TURN)
+    var contract_btn := panel.get_node("Frame/Margin/VBox/Row").get_node_or_null("ContractBtn") as Button
+    if contract_btn:
+        contract_btn.disabled = world.is_tutorial_locked(World.TUT_LOCK_CONTRACT)
+
+
+## _tutorial_guard
+func _tutorial_guard(lock_key: String, fallback_msg: String) -> bool:
+    if world == null:
+        return true
+    if not world.has_method("is_tutorial_locked"):
+        return true
+    if not world.is_tutorial_locked(lock_key):
+        return true
+    var msg := fallback_msg
+    if world.has_method("get_tutorial_lock_reason"):
+        var r := world.get_tutorial_lock_reason(lock_key)
+        if r != "":
+            msg = r
+    if world.has_method("send_system_message"):
+        world.send_system_message(msg)
+    elif world.has_method("_world_message"):
+        world.call("_world_message", msg)
+    else:
+        _show_info(msg)
+    return false
+
+## _on_trade
+func _on_trade() -> void:
+    if not _tutorial_guard(World.TUT_LOCK_TRADE, "チュートリアル中はまだ取引できません。"):
+        return
+    if hud and hud.has_method("_on_trade_btn"):
+        hud.call("_on_trade_btn")
+
+
+## _on_map
+func _on_map() -> void:
+    if not _tutorial_guard(World.TUT_LOCK_MAP, "チュートリアル中はまだ地図を開けません。"):
+        return
+    if hud and hud.has_method("_on_map_btn"):
+        hud.call("_on_map_btn")
+
+
+## _on_move
+func _on_move() -> void:
+    if not _tutorial_guard(World.TUT_LOCK_MOVE, "チュートリアル中はまだ移動できません。"):
+        return
+    if hud and hud.has_method("_open_move_window"):
+        hud.call("_open_move_window")
+
+
+## _on_inv
+func _on_inv() -> void:
+    if not _tutorial_guard(World.TUT_LOCK_INV, "チュートリアル中はまだ所持品を開けません。"):
+        return
+    if hud and hud.has_method("_open_inventory_window"):
+        hud.call("_open_inventory_window")
+
+
+## _on_step
+func _on_step() -> void:
+    if world == null:
+        return
+    if not _tutorial_guard(World.TUT_LOCK_STEP, "チュートリアル中は時間を進められません。"):
+        return
+    if world.is_paused():
+        world.step_one_day()
+    else:
+        world.pause()
+        world.step_one_day()
+
+
+## _on_step_turn
+func _on_step_turn() -> void:
+    if world == null:
+        return
+    if not _tutorial_guard(World.TUT_LOCK_STEP_TURN, "チュートリアル中は時間を進められません。"):
+        return
+    if world.is_paused():
+        world.step_one_turn()
+    else:
+        world.pause()
+        world.step_one_turn()
+
+
+## _on_info
+func _on_info() -> void:
+    if world == null:
+        _show_info("World が見つかりません。")
+        return
+    if not _tutorial_guard(World.TUT_LOCK_INFO, "チュートリアル中はまだ情報を確認できません。"):
+        return
+    var moving := bool(world.player.get("enroute", false))
+    if moving:
+        _show_info("移動中は情報を集められません。")
+        return
+    _open_rumor_window()
+
+
+## _on_contracts
+func _on_contracts() -> void:
+    if not _tutorial_guard(World.TUT_LOCK_CONTRACT, "チュートリアル中はまだ契約を確認できません。"):
+        return
+    _open_contracts_window()
+
+
+## _on_trust
+func _on_trust() -> void:
+    if not _tutorial_guard(World.TUT_LOCK_TRUST, "チュートリアル中はまだ信用を確認できません。"):
+        return
+    _ensure_trust_window()
+    _rebuild_trust_list()
+
+    if trust_win:
+        # 位置とサイズをHUD共通ロジックに合わせる
+        _size_and_center(trust_win)
+        # Window は popup_centered() で前面＆表示
+        trust_win.popup_centered()
+        trust_win.grab_focus()
+
+
+
