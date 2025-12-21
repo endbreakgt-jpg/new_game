@@ -60,6 +60,7 @@ var tutorial_locks: Dictionary = {}
 
 @export var events_daily_file: String = "events_daily.csv"   # 日時イベントテーブル（CSV）
 @export var events_travel_file: String = "events_travel.csv" # 道中イベントテーブル（CSV）
+@export var key_items_file: String = "key_items.csv"        # 大切なもの定義CSV
 
 @export var enable_auto_supply: bool = false  # 旧パッシブ供給のON/OFF（デフォルトOFF）
 
@@ -162,6 +163,9 @@ var stock: Dictionary = {}            # city_id -> pid -> {"qty": float, "target
 var price: Dictionary = {}            # city_id -> pid -> float
 var history: Dictionary = {}          # city_id -> pid -> Array[float]
 var traders: Array[Dictionary] = []   # list of traders
+
+# --- Key Items definitions (key_id -> row Dictionary) ---
+var key_items: Dictionary = {}
 # === Reputation / Trust ===
 @export_range(0.0, 100.0, 0.1) var rep_global: float = 0.0
 var rep_by_province: Dictionary = {}
@@ -1272,6 +1276,18 @@ func load_data() -> void:
     _events_daily = _loader.load_csv_dicts(data_dir + events_daily_file)
     _events_travel = _loader.load_csv_dicts(data_dir + events_travel_file)
 
+    # --- 大切なもの（Key Items）定義 ---
+    key_items.clear()
+    var ki_path := data_dir + key_items_file
+    if FileAccess.file_exists(ki_path):
+        var ki_rows: Array[Dictionary] = _loader.load_csv_dicts(ki_path)
+        for ki_any in ki_rows:
+            var ki: Dictionary = ki_any
+            var kid: String = String(ki.get("key_id", ki.get("id", "")))
+            if kid == "":
+                continue
+            key_items[kid] = ki
+
 func _init_reputation() -> void:
     # 0〜100に正規化
     rep_global = clamp(rep_global, 0.0, 100.0)
@@ -1852,12 +1868,12 @@ func init_player() -> void:
         "cash": 500.0,
         "cap": 40,
         "cargo": {},
+        "key_items": {},
         "enroute": false,
         "dest": "",
         "arrival_day": 0,
     }
     player["escort_level"] = int(player.get("escort_level", 0))
-
     player["last_arrival_day"] = -999
 func _player_arrive() -> void:
     player["enroute"] = false
@@ -1874,13 +1890,13 @@ func can_player_move_to(dest: String) -> Dictionary:
         return {"ok": false, "err": MoveErr.ARRIVED_TODAY}
     if not adj.has(a) or not (dest in (adj[a] as Array)):
         return {"ok": false, "err": MoveErr.NOT_ADJACENT}
-    var days: int = _route_days(a, dest)
-    var travel_cost: float = travel_cost_per_day * float(days)
-    var toll: float = (float(_route_toll(a, dest)) if pay_toll_on_depart else 0.0)
-    var total_cost: float = travel_cost + toll
+    var cap_used: int = _cargo_used(player)
+    var breakdown: Dictionary = _calc_edge_travel_cost(a, dest, cap_used)
+    var days: int = int(breakdown.get("days", 1))
+    var total_cost: float = float(breakdown.get("total", 0.0))
     if float(player.get("cash", 0.0)) < total_cost:
-        return {"ok": false, "err": MoveErr.LACK_CASH, "need": total_cost, "days": days}
-    return {"ok": true, "need": total_cost, "days": days}
+        return {"ok": false, "err": MoveErr.LACK_CASH, "need": total_cost, "days": days, "breakdown": breakdown}
+    return {"ok": true, "need": total_cost, "days": days, "breakdown": breakdown}
 
 func player_move(dest: String) -> bool:
     # 1ステップ移動も player_move_via に統一して扱う
@@ -1919,6 +1935,47 @@ func path_exists(a: String, b: String) -> bool:
                 q.append(nb)
     return false
 
+func _travel_tax_multiplier_for_city(city_id: String) -> float:
+    # 大切なもの key_items.csv の効果による「通行税・関税」倍率
+    var mult: float = 1.0
+    if player == null:
+        return mult
+    var inv_any: Variant = player.get("key_items", {})
+    if typeof(inv_any) != TYPE_DICTIONARY:
+        return mult
+    var inv: Dictionary = inv_any as Dictionary
+    if inv.is_empty() or key_items.is_empty():
+        return mult
+
+    var province: String = ""
+    if cities.has(city_id):
+        province = String(cities[city_id].get("province", ""))
+
+    for kid_any in inv.keys():
+        var kid: String = String(kid_any)
+        var count: int = int(inv.get(kid, 0))
+        if count <= 0:
+            continue
+        if not key_items.has(kid):
+            continue
+
+        var def: Dictionary = key_items[kid] as Dictionary
+        var effect_type: String = String(def.get("effect_type", "")).to_lower()
+        if effect_type != "travel_tax_mult":
+            continue
+
+        var target: String = String(def.get("effect_target", ""))
+        if target != "" and target != city_id and target != province:
+            continue
+
+        var value: float = float(_num(def.get("effect_value", 1.0)))
+        if value <= 0.0:
+            continue
+
+        for i in range(count):
+            mult *= value
+    return mult
+
 func _calc_edge_travel_cost(u: String, v: String, cap_used: int) -> Dictionary:
     # u→v を移動するときのコストをまとめて計算するヘルパー
     var days: int = _route_days(u, v)
@@ -1936,6 +1993,8 @@ func _calc_edge_travel_cost(u: String, v: String, cap_used: int) -> Dictionary:
     # 積載容量ベースの通行税・関税（価格ではなく容量）
     var cap_u: int = max(0, cap_used)
     var tax: float = travel_tax_per_cap * float(cap_u) * rank_mult
+    var tax_mult: float = _travel_tax_multiplier_for_city(v)
+    tax *= tax_mult
 
     # 既存のルート固有tollもまだ生かしておく
     var toll: float = 0.0
@@ -1951,6 +2010,7 @@ func _calc_edge_travel_cost(u: String, v: String, cap_used: int) -> Dictionary:
         "toll": toll,
         "total": total,
         "rank_mult": rank_mult,
+        "tax_mult": tax_mult,
     }
 
 
@@ -3904,21 +3964,74 @@ func _try_release_batches(cid: String, pid: String) -> void:
 
 # === Key Items（大切なもの）API =====================================
 
-func give_key_item(id: String, count: int = 1) -> void:
-    # プレイヤーに「大切なもの」を付与する
+func give_key_item(id: String, count: int = 1, show_message: bool = true) -> bool:
+    if id == "":
+        return false
     if count <= 0:
-        return
+        return false
     if player == null:
-        return
+        return false
 
-    var inv := player.get("key_items", {}) as Dictionary
+    if not player.has("key_items") or typeof(player.get("key_items")) != TYPE_DICTIONARY:
+        player["key_items"] = {}
+
+    var inv: Dictionary = player.get("key_items", {}) as Dictionary
+
+    var def: Dictionary = {}
+    if key_items.has(id):
+        def = key_items[id] as Dictionary
+
+    var is_unique: bool = int(def.get("unique", 0)) == 1
+    var max_stack: int = int(def.get("max_stack", 99))
+    if is_unique or max_stack <= 0:
+        max_stack = 1
+
     var cur: int = int(inv.get(id, 0))
-    inv[id] = cur + count
+    if cur >= max_stack:
+        return false
+
+    var add: int = min(count, max_stack - cur)
+    inv[id] = cur + add
     player["key_items"] = inv
 
-    # 将来はCSVから正式名称を取ってくる想定（今はidのまま）
-    var name_str := id
-    _world_message("%s を手に入れた。" % name_str)
+    if show_message:
+        var name_str: String = id
+        if not def.is_empty():
+            name_str = String(def.get("name_ja", def.get("name", id)))
+        var msg: String = ""
+        if add <= 1:
+            msg = "%sを手に入れた。" % name_str
+        else:
+            msg = "%s×%dを手に入れた。" % [name_str, add]
+        _world_message(msg)
+
+    var auto_apply: bool = int(def.get("auto_apply", 0)) == 1
+    if auto_apply:
+        _apply_key_item_effect(def, add)
+
+    world_updated.emit()
+    return true
+
+func _apply_key_item_effect(def: Dictionary, qty_added: int) -> void:
+    if def.is_empty() or player == null:
+        return
+    var effect_type: String = String(def.get("effect_type", "")).to_lower()
+    var target: String = String(def.get("effect_target", ""))
+    var value_f: float = float(_num(def.get("effect_value", 0.0)))
+
+    match effect_type:
+        "cap_add":
+            var delta: int = int(round(value_f)) * max(1, qty_added)
+            if delta != 0:
+                player["cap"] = int(player.get("cap", 0)) + delta
+                _world_message("積載量が%d増えた。" % delta)
+        "travel_tax_mult":
+            # パッシブ効果だが、チュートリアル向けに変化を見える化
+            if target != "" and value_f > 0.0:
+                var pct: int = int(round(value_f * 100.0))
+                _world_message("%sでの通行税が %d%% になった。" % [target, pct])
+        _:
+            pass
 
 func has_key_item(id: String) -> bool:
     if player == null:
