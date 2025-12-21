@@ -192,11 +192,11 @@ func _finish_prologue() -> void:
             world.clear_tutorial_locks()
         world.set_tutorial_state(World.TUT_STATE_TUT1, false, "finish_prologue")
 func _on_dialog_line_started(id: String, seq: int, row: Dictionary) -> void:
-    _last_line_info = {"id": id, "seq": seq, "row": row}
-    if _maybe_start_pending_overlay(id, seq):
-        return
     if _suppress_next_line_started:
         _suppress_next_line_started = false
+        return
+    _last_line_info = {"id": id, "seq": seq, "row": row}
+    if _maybe_start_pending_overlay(id, seq):
         return
 
 func _queue_break_and_resume(id: String, resume_seq: int) -> void:
@@ -224,11 +224,12 @@ func _show_system_message(text: String) -> void:
 
 func _on_prologue_1_seq_60(row: Dictionary) -> void:
     if world and world.has_method("give_key_item"):
+        if world.has_method("has_key_item"):
+            if world.has_key_item("guild_permit_father"):
+                return
         world.give_key_item("guild_permit_father", 1)
-    _resume_info = {"id": _current_story_id, "seq": 65}
-    _overlay_active = true
-    _current_story_id = ""
-    call_deferred("_show_system_message", "父親のギルド許可証を手に入れた")
+    # システムメッセージは World 側のトースト/ログに任せ、
+    # ダイアログを止めずに自然に続行する
 
 func _maybe_start_pending_overlay(id: String, seq: int) -> bool:
     if _pending_system_msg == "":
@@ -263,7 +264,6 @@ func _on_dialog_advanced(next_index: int) -> void:
         _last_line_info.clear()
         return
     if lid == "prologue_1" and lseq == 60:
-        _suppress_next_line_started = true
         _on_prologue_1_seq_60(lrow)
         _last_line_info.clear()
 

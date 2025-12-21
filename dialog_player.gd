@@ -1,6 +1,8 @@
 extends Node
 class_name DialogPlayer
 
+signal line_started(id: String, seq: int, row: Dictionary)
+
 @export var csv_path: String = "res://data/dialogs.csv"
 @export var dialog_ui_path: NodePath
 
@@ -9,8 +11,8 @@ var rows_by_id: Dictionary = {}
 
 # 現在再生中の行データ（ポートレート切替に使用）
 var _active_rows: Array[Dictionary] = []
-
-signal line_started(id: String, seq: int, row: Dictionary)
+var _active_id: String = ""
+var _emit_guard_token: int = 0
 
 func _ready() -> void:
     _resolve_dialog_ui()
@@ -60,6 +62,8 @@ func _prepare_dialog_ui() -> void:
     # 進行に合わせたポートレート切替
     if not dialog_ui.advanced.is_connected(Callable(self, "_on_dialog_advanced")):
         dialog_ui.advanced.connect(_on_dialog_advanced)
+    if not dialog_ui.finished.is_connected(Callable(self, "_on_dialog_finished")):
+        dialog_ui.finished.connect(_on_dialog_finished)
 
 func _load_csv() -> void:
     var loader := CsvLoader.new()
@@ -77,6 +81,23 @@ func _load_csv() -> void:
         rows_by_id[id].sort_custom(func(a, b): return int(a.get("seq", 0)) < int(b.get("seq", 0)))
 
 func play(id: String) -> bool:
+    return _play_from_index(id, 0)
+
+func play_from_seq(id: String, start_seq: int) -> bool:
+    # seq（CSVの値）を指定して、そこから再生する
+    var rows: Array = rows_by_id.get(id, [])
+    if rows.is_empty():
+        return false
+    var start_index: int = 0
+    for i in range(rows.size()):
+        var r: Dictionary = rows[i] as Dictionary
+        var s: int = int(r.get("seq", 0))
+        if s >= start_seq:
+            start_index = i
+            break
+    return _play_from_index(id, start_index)
+
+func _play_from_index(id: String, start_index: int) -> bool:
     if dialog_ui == null:
         _resolve_dialog_ui()
     if dialog_ui == null:
@@ -89,15 +110,22 @@ func play(id: String) -> bool:
         push_warning("DialogPlayer: id '%s' not found in %s" % [id, csv_path])
         return false
 
-    # 行データを保持（speaker / portrait を行ごとに適用するため）
+    if start_index < 0:
+        start_index = 0
+    if start_index >= rows.size():
+        start_index = max(0, rows.size() - 1)
+
+    # 行データを保持（speaker / portrait / Storyトリガー用）
     _active_rows.clear()
-    for r in rows:
-        _active_rows.append(r as Dictionary)
+    for i in range(start_index, rows.size()):
+        _active_rows.append(rows[i] as Dictionary)
+    _active_id = id
+    _emit_guard_token += 1
+    var token: int = _emit_guard_token
 
     # テキストだけまとめて Dialog に渡す
     var lines: Array[String] = []
-    for r_any in rows:
-        var r: Dictionary = r_any
+    for r in _active_rows:
         lines.append(str(r.get("text", "")))
 
     # speaker はここでは空で渡しておき、後から _apply_row(0) で設定する
@@ -105,9 +133,22 @@ func play(id: String) -> bool:
 
     # 先頭行の speaker / portrait を反映
     _apply_row(0)
-    _schedule_line_started(0)
+
+    # Story 側が advanced を見てから処理できるよう、line_started は遅延で流す
+    call_deferred("_emit_line_started", token, 0)
 
     return true
+
+func _emit_line_started(token: int, index: int) -> void:
+    if token != _emit_guard_token:
+        return
+    if _active_rows.is_empty():
+        return
+    if index < 0 or index >= _active_rows.size():
+        return
+    var row: Dictionary = _active_rows[index]
+    var seq: int = int(row.get("seq", 0))
+    line_started.emit(_active_id, seq, row)
 
 func _apply_row(index: int) -> void:
     if dialog_ui == null:
@@ -128,54 +169,19 @@ func _apply_row(index: int) -> void:
         (dialog_ui as Dialog).set_portrait_by_path(p)
 
 
+# ダイアログの進行に合わせて行ごとに画像を切替
 # ダイアログの進行に合わせて行ごとに speaker / 画像を切替
 func _on_dialog_advanced(next_index: int) -> void:
-    # next_index は現在の行インデックス（0起点）
     if _active_rows.is_empty():
         return
     if next_index < 0 or next_index >= _active_rows.size():
         return
-
-        # 既存のポートレート切替など
     _apply_row(next_index)
-    _schedule_line_started(next_index)
+    var token: int = _emit_guard_token
+    call_deferred("_emit_line_started", token, next_index)
 
-func play_from_seq(id: String, start_seq: int) -> bool:
-    var rows: Array = rows_by_id.get(id, [])
-    var start_idx := -1
-    for i in range(rows.size()):
-        if int(rows[i].get("seq", 0)) >= start_seq:
-            start_idx = i; break
-    if start_idx == -1: return false
+func _on_dialog_finished() -> void:
+    # 途中で stop_dialog された場合も含めて、状態だけ掃除
+    _emit_guard_token += 1
+    _active_id = ""
     _active_rows.clear()
-    for i in range(start_idx, rows.size()):
-        _active_rows.append(rows[i])
-    var lines: Array[String] = []
-    for r_any in _active_rows:
-        lines.append(str((r_any as Dictionary).get("text", "")))
-    dialog_ui.show_lines(lines, "")
-    _apply_row(0)
-    _schedule_line_started(0)
-    return true
-
-
-func _schedule_line_started(index: int) -> void:
-    # 次フレームで line_started を発火させ、UI更新とずれないようにする
-    call_deferred("_emit_line_started", index)
-
-
-func _emit_line_started(index: int) -> void:
-    if _active_rows.is_empty():
-        return
-    if index < 0 or index >= _active_rows.size():
-        return
-
-    var row: Dictionary = _active_rows[index]
-
-    # dialogs.csv の列をそのまま使う想定
-    var id := String(row.get("id", ""))
-    var seq := int(row.get("seq", 0))
-
-    # ★ここが Story.gd などに割り込み処理を渡すフックポイント
-    if id != "":
-        line_started.emit(id, seq, row)
