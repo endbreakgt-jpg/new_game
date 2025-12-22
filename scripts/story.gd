@@ -140,6 +140,17 @@ func _play_next_prologue() -> void:
     if result is bool and not result:
         push_warning("Story: ダイアログID '%s' の再生に失敗しました。" % id)
 
+func _on_dialog_line_started(id: String, seq: int, row: Dictionary) -> void:
+    _last_line_info = {"id": id, "seq": seq, "row": row}
+
+    # 行が表示されたタイミングで実行したいトリガー（メッセージの挿入位置が安定する）
+    if id == "prologue_1" and seq == 60:
+        _on_prologue_1_seq_60(row)
+
+    if _maybe_start_pending_overlay(id, seq):
+        return
+
+
 func _on_dialog_finished() -> void:
     if _overlay_active:
         _overlay_active = false
@@ -191,13 +202,6 @@ func _finish_prologue() -> void:
         if world.has_method("clear_tutorial_locks"):
             world.clear_tutorial_locks()
         world.set_tutorial_state(World.TUT_STATE_TUT1, false, "finish_prologue")
-func _on_dialog_line_started(id: String, seq: int, row: Dictionary) -> void:
-    if _suppress_next_line_started:
-        _suppress_next_line_started = false
-        return
-    _last_line_info = {"id": id, "seq": seq, "row": row}
-    if _maybe_start_pending_overlay(id, seq):
-        return
 
 func _queue_break_and_resume(id: String, resume_seq: int) -> void:
     _resume_after_break = {"id": id, "seq": resume_seq}
@@ -229,13 +233,18 @@ func _show_system_message(text: String) -> void:
         dialog_ui.show_lines([text], "システム")
 
 func _on_prologue_1_seq_60(row: Dictionary) -> void:
+    # 父のギルド許可証を授与（メッセージは DialogPlayer で統一して出す）
     if world and world.has_method("give_key_item"):
         if world.has_method("has_key_item"):
             if world.has_key_item("guild_permit_father"):
                 return
-        world.give_key_item("guild_permit_father", 1)
-    # システムメッセージは World 側のトースト/ログに任せ、
-    # ダイアログを止めずに自然に続行する
+
+        # World 側の _world_message 経由だと「どの行の直後に出るか」がズレやすいので、
+        # ここでは授与メッセージだけ抑制して DialogPlayer に統一。
+        var ok: bool = bool(world.give_key_item("guild_permit_father", 1, false))
+        if ok:
+            _show_system_message("父親のギルド許可証を手に入れた！")
+
 
 func _maybe_start_pending_overlay(id: String, seq: int) -> bool:
     if _pending_system_msg == "":
@@ -262,16 +271,13 @@ func _on_dialog_advanced(next_index: int) -> void:
         return
     var lid := String(_last_line_info.get("id", ""))
     var lseq := int(_last_line_info.get("seq", 0))
-    var lrow: Dictionary = _last_line_info.get("row", {})
 
+    # prologue_1,55 の後に一瞬ウィンドウを消して「間」を作る
     if lid == "prologue_1" and lseq == 55:
-        _suppress_next_line_started = true
         _queue_break_and_resume(lid, 60)
         _last_line_info.clear()
         return
-    if lid == "prologue_1" and lseq == 60:
-        _on_prologue_1_seq_60(lrow)
-        _last_line_info.clear()
+
 
 func _after_prologue_1() -> void:
     _notify_world("父親からギルド許可証と荷物、それに旅費を預かった。")

@@ -1358,10 +1358,8 @@ func _on_supply_event(cid: String, pid: String, qty: int, mode: String, flavor: 
 
     # システムメッセージはトースト/AcceptDialog ではなく DialogPlayer に統一
     if mode == "system":
-        if _auto_travel_active and world != null and bool(world.player.get("enroute", false)):
-            _auto_travel_waiting_for_event = true
-            if _auto_travel_timer != null and is_instance_valid(_auto_travel_timer):
-                _auto_travel_timer.stop()
+        if dialog_player == null:
+            _resolve_dialog_player()
         if dialog_player and dialog_player.has_method("show_system_message"):
             dialog_player.call("show_system_message", txt)
         else:
