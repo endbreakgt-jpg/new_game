@@ -58,8 +58,10 @@ func _auto_type(s: String):
 
 func load_key_items(path: String) -> Dictionary:
     # key_items.csv を {key_id: row} の辞書に変換して返す
-    # row は load_csv() の型推論済み Dictionary（int/float/bool など）になる
-    var rows: Array[Dictionary] = load_csv(path, true, ",", true)
+    # ここで呼び出す関数名を load_csv_dicts に修正
+    # 引数の数も定義 (path, has_header, delimiter) に合わせます
+    var rows: Array[Dictionary] = load_csv_dicts(path, true, ",") 
+    
     var out: Dictionary = {}
     for r in rows:
         var key_id: String = String(r.get("key_id", r.get("id", ""))).strip_edges()
