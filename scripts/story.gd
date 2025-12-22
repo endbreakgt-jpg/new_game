@@ -208,9 +208,13 @@ func _queue_break_and_resume(id: String, resume_seq: int) -> void:
     _current_story_id = ""
     _running_prologue = false
     if dialog_ui:
-        dialog_ui.stop_dialog()
+        if dialog_ui.has_method("stop_dialog_keep_blocker"):
+            dialog_ui.call("stop_dialog_keep_blocker")
+        else:
+            dialog_ui.stop_dialog()
     var timer := get_tree().create_timer(0.2)
     timer.timeout.connect(_resume_story_after_break)
+
 
 func _resume_story_after_break() -> void:
     var rid := String(_resume_after_break.get("id", ""))

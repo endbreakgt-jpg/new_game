@@ -10,7 +10,9 @@ prologue_1,40,マルク,Pilton？ それなら僕も行ったことあるし、�
 prologue_1,45,父親,お前が？,res://ui/portraits/father_01.png
 prologue_1,50,父親,……ふむ。,res://ui/portraits/father_01.png
 prologue_1,55,父親,分かった。お前に頼もう。ちょっと待っていろ。,res://ui/portraits/father_01.png
+prologue_1,56,DEV,break,
 prologue_1,60,父親,……よし、これを持っていきなさい。,res://ui/portraits/father_01.png
+prologue_1,61,DEV,大切なもの：父親のギルド許可証を入手,
 prologue_1,65,マルク,これは……？,res://ui/portraits/hero_01.png
 prologue_1,70,父親,俺の代理で来たって話が通らなかったら、それを持って商業ギルドを訪ねるといい。,res://ui/portraits/father_01.png
 prologue_1,75,父親,Pilton地区のギルドは顔が利く。なんとかしてくれるだろう。,res://ui/portraits/father_01.png
@@ -21,6 +23,7 @@ prologue_1,95,父親,無駄遣いするなよ？,res://ui/portraits/father_01.pn
 prologue_1,100,マルク,大丈夫、大事に使うよ。,res://ui/portraits/hero_01.png
 prologue_1,105,マルク,じゃあ、明日の朝に出発する。,res://ui/portraits/hero_01.png
 prologue_1,110,父親,ああ、頼んだ。気をつけてな。,res://ui/portraits/father_01.png
+prologue_1,111,DEV,MAPを表示→マルクのアイコンがDurtonからPiltonに移動する,
 prologue_5,5,マルク,ふう。,res://ui/portraits/hero_01.png
 prologue_5,10,マルク,父さんのギルド許可証があったから、わりとすんなり入れたな。,res://ui/portraits/hero_01.png
 prologue_5,15,マルク,よし、荷物を届けに行こう。,res://ui/portraits/hero_01.png
@@ -74,6 +77,7 @@ prologue_10,175,マルク,……よし、何とか代役をこなすことが出
 prologue_10,180,マルク,一つの契約だけで、いろんな人と話したな。,res://ui/portraits/hero_01.png
 prologue_10,185,マルク,これが商人の仕事なんだ……。,res://ui/portraits/hero_01.png
 prologue_10,190,マルク,さ、帰ろう。,res://ui/portraits/hero_01.png
+prologue_10,191,DEV,MAPを表示→マルクのアイコンがPiltonからDurtonに移動する,
 prologue_15,5,マルク,ただいま。,res://ui/portraits/hero_01.png
 prologue_15,10,父親,おお、お帰り。大丈夫だったか？,res://ui/portraits/father_01.png
 prologue_15,15,マルク,荷物を届けて代金を回収できた、って意味なら大丈夫だったよ。,res://ui/portraits/hero_01.png
@@ -98,6 +102,7 @@ prologue_15,105,父親,俺もまだ引退するつもりはないが、お前に
 prologue_15,110,マルク,はい！,res://ui/portraits/hero_01.png
 prologue_15,115,父親,じゃあ、俺のギルド許可証を返してくれるか。,res://ui/portraits/father_01.png
 prologue_15,120,マルク,あ、そうだった……。,res://ui/portraits/hero_01.png
+prologue_15,121,DEV,父親のギルド許可証を返却,
 prologue_15,125,父親,商人として働く以上、今後はお前自身の信用を築かなければならん。,res://ui/portraits/father_01.png
 prologue_15,130,マルク,うん。,res://ui/portraits/hero_01.png
 prologue_15,135,父親,また Pilton の商人ギルドを訪ねるといい。,res://ui/portraits/father_01.png

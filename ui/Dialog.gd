@@ -27,6 +27,10 @@ var _current_line_text: String = ""
 var _blocker: Control = null                # フルスクリーン入力ブロッカー
 var _portrait_rect: TextureRect = null      # キャラ絵表示先
 
+# --- “ウィンドウだけ”一時非表示用 ---
+var _window_hidden: bool = false
+var _saved_panel_stylebox: StyleBox = null
+
 func _ready() -> void:
     process_mode = Node.PROCESS_MODE_ALWAYS
     _setup_layout()
@@ -194,6 +198,8 @@ func set_speaker(name: String) -> void:
         character_name.text = name
 
 func start_dialog() -> void:
+    # break演出などで「ウィンドウだけ消した」状態から復帰する
+    _set_message_window_hidden(false)
     if content:
         content.text = ""
         content.visible_characters = 0
@@ -211,12 +217,29 @@ func start_dialog() -> void:
     started.emit()
 
 func stop_dialog() -> void:
+    # 次回表示に備えて、ウィンドウ表示状態を通常に戻す
+    _set_message_window_hidden(false)
     is_dialog_mode = false
     set_process(false)
     visible = false
     next.visible = false
     _current_line_text = ""
     _hide_blocker()
+    finished.emit()
+
+func stop_dialog_keep_blocker() -> void:
+    # 会話を終了するが、暗幕（InputBlocker）は残したままにする。
+    # 例：プロローグの「間」演出で、メッセージウィンドウだけ一瞬消したい時。
+    is_dialog_mode = false
+    set_process(false)
+
+    # Dialog 自体を hide() すると子ノード（blocker）も消えるため、rootは visible のまま維持。
+    visible = true
+    next.visible = false
+    _current_line_text = ""
+
+    _show_blocker()
+    _set_message_window_hidden(true)
     finished.emit()
 
 func _process(delta: float) -> void:
@@ -280,7 +303,12 @@ func _input(event: InputEvent) -> void:
     get_viewport().set_input_as_handled()
 
 func _unhandled_input(event: InputEvent) -> void:
+    # break中などで is_dialog_mode が false でも blocker を残す場合がある。
+    # その間も背後UIに入力が流れないようにする。
     if is_dialog_mode:
+        get_viewport().set_input_as_handled()
+        return
+    if _blocker and is_instance_valid(_blocker) and _blocker.visible:
         get_viewport().set_input_as_handled()
 
 func _show_line_instant() -> void:
@@ -308,3 +336,46 @@ func _apply_line_display(text: String, visible_chars: int = -1) -> void:
         content.visible_characters = -1
     else:
         content.visible_characters = visible_chars
+
+func _set_message_window_hidden(hidden: bool) -> void:
+    # 「暗幕は残して、ウィンドウだけ消す」ための内部API。
+    # Dialog は root Panel なので、
+    # 1) 中身（VBox/Next）を非表示
+    # 2) Panel の StyleBox を透明に差し替え
+    # の2段で対応する。
+    if hidden == _window_hidden:
+        return
+
+    var vb := get_node_or_null("VBoxContainer") as Control
+    var nx := get_node_or_null("Next") as Control
+
+    if hidden:
+        # 現在の見た目を退避（初回のみ）
+        if _saved_panel_stylebox == null:
+            _saved_panel_stylebox = get_theme_stylebox("panel")
+
+        if vb:
+            vb.visible = false
+        if nx:
+            nx.visible = false
+
+        var sb := StyleBoxFlat.new()
+        sb.bg_color = Color(0, 0, 0, 0)
+        sb.border_color = Color(0, 0, 0, 0)
+        sb.border_width_left = 0
+        sb.border_width_top = 0
+        sb.border_width_right = 0
+        sb.border_width_bottom = 0
+        add_theme_stylebox_override("panel", sb)
+    else:
+        if vb:
+            vb.visible = true
+        # next は進行状況で出すので、ここでは強制表示しない
+
+        if _saved_panel_stylebox:
+            add_theme_stylebox_override("panel", _saved_panel_stylebox)
+        else:
+            # 万一退避に失敗していたら、見た目を作り直して復旧
+            _setup_layout()
+
+    _window_hidden = hidden

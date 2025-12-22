@@ -4021,6 +4021,7 @@ func give_key_item(id: String, count: int = 1, show_message: bool = true) -> boo
 func _apply_key_item_effect(def: Dictionary, qty_added: int) -> void:
     if def.is_empty() or player == null:
         return
+
     var effect_type: String = String(def.get("effect_type", "")).to_lower()
     var target: String = String(def.get("effect_target", ""))
     var value_f: float = float(_num(def.get("effect_value", 0.0)))
@@ -4031,13 +4032,19 @@ func _apply_key_item_effect(def: Dictionary, qty_added: int) -> void:
             if delta != 0:
                 player["cap"] = int(player.get("cap", 0)) + delta
                 _world_message("積載量が%d増えた。" % delta)
+
         "travel_tax_mult":
-            # パッシブ効果だが、チュートリアル向けに変化を見える化
+            # パッシブ効果。ゲーム中に毎回見せる必要はないのでデバッグログのみ。
             if target != "" and value_f > 0.0:
                 var pct: int = int(round(value_f * 100.0))
-                _world_message("%sでの通行税が %d%% になった。" % [target, pct])
+                var msg: String = "%sでの通行税が %d%% になった。" % [target, pct]
+                if has_method("humanize_ids"):
+                    msg = humanize_ids(msg)
+                _log(msg)
+
         _:
             pass
+
 
 func has_key_item(id: String) -> bool:
     if player == null:
