@@ -963,8 +963,8 @@ func _apply_travel_outcome(chosen: Dictionary) -> void:
     if kind == "days_delta":
         var delta := int(round(val))
         if delta != 0:
-            var base_arrive := int(player.get("arrival_day_base", player.get("arrival_day", day)))
-            var arrive := max(day + 1, base_arrive + delta)
+            var base_arrive: int = int(player.get("arrival_day_base", player.get("arrival_day", day)))
+            var arrive: int = int(max(day + 1, base_arrive + delta))
             player["arrival_day"] = arrive
     elif kind == "cargo_loss_pct":
         var ratio: float = clamp(float(val), 0.0, 1.0)
@@ -1078,8 +1078,8 @@ func _roll_travel_event_for_player() -> void:
     if kind == "days_delta":
         var delta := int(round(val))
         if delta != 0:
-            var base_arrive := int(player.get("arrival_day_base", player.get("arrival_day", day)))
-            var arrive := max(day + 1, base_arrive + delta)
+            var base_arrive: int = int(player.get("arrival_day_base", player.get("arrival_day", day)))
+            var arrive: int = int(max(day + 1, base_arrive + delta))
             player["arrival_day"] = arrive
         var msg2 := String(chosen.get("flavor_ja", ""))
         if msg2 != "": _world_message(msg2)
