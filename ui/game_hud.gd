@@ -1156,6 +1156,8 @@ func _on_map_city_picked(cid: String) -> void:
                 _move_confirm_dlg.queue_free()
                 _move_confirm_dlg = null
 
+            # 移動開始後は自動で日数を進める
+            start_auto_travel()
             _refresh()
     )
 
