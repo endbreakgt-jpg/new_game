@@ -647,13 +647,11 @@ func resolve_travel_with_roll(roll: int, q: float = -1.0) -> void:
         layers = route_hazard_layers.get(key, {}) as Dictionary
     var tier: String = _dice_tier_from_roll(roll)
     if tier == "normal":
-        _world_message("道中は平穏そのものだった。")
         return
     var ev: Dictionary = _pick_travel_event_for_tier_layers(tier, layers)
     if ev.is_empty():
         ev = _pick_travel_event_outcome()
     if ev.is_empty():
-        _world_message("小さなトラブルはあったが問題なく進めた。")
         return
     _apply_travel_outcome(ev)
 
@@ -1074,8 +1072,6 @@ func _roll_travel_event_for_player() -> void:
     _dice_debug("TravelDice: pick=%.3f kind=%s id=%s val=%.3f (hazard=%.2f escort=%d)" % [pick, kind, String(chosen.get("id","")), val, hazard, escort])
 
     if kind == "none":
-        var msg := String(chosen.get("flavor_ja", ""))
-        if msg != "": _world_message(msg)
         return
     if kind == "days_delta":
         var arrive := int(player.get("arrival_day", day))

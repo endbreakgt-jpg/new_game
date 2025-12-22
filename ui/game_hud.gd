@@ -17,6 +17,7 @@ var _auto_travel_elapsed_days: int = 0
 var _auto_travel_dest_city: String = ""
 var _auto_travel_prev_debug_skip: bool = false
 var _auto_travel_dialog_in_use: bool = false
+var _auto_travel_waiting_for_event: bool = false
 var _dialog_ui: Node = null
 
 
@@ -1357,6 +1358,10 @@ func _on_supply_event(cid: String, pid: String, qty: int, mode: String, flavor: 
 
     # システムメッセージはトースト/AcceptDialog ではなく DialogPlayer に統一
     if mode == "system":
+        if _auto_travel_active and world != null and bool(world.player.get("enroute", false)):
+            _auto_travel_waiting_for_event = true
+            if _auto_travel_timer != null and is_instance_valid(_auto_travel_timer):
+                _auto_travel_timer.stop()
         if dialog_player and dialog_player.has_method("show_system_message"):
             dialog_player.call("show_system_message", txt)
         else:
@@ -1393,6 +1398,15 @@ func _on_supply_event(cid: String, pid: String, qty: int, mode: String, flavor: 
         _show_toast(txt)
 
     _refresh_event_log()  # イベントログを即時更新
+
+func _on_dialog_finished_for_auto_travel() -> void:
+    if not _auto_travel_active or not _auto_travel_waiting_for_event:
+        return
+    _auto_travel_waiting_for_event = false
+    if _auto_travel_dialog_in_use:
+        _update_travel_progress_text()
+    if _auto_travel_timer != null and is_instance_valid(_auto_travel_timer):
+        _auto_travel_timer.start()
 
 # --- Pause/resume unifier ---
 func _any_supply_dialog_visible() -> bool:
@@ -1545,6 +1559,9 @@ func _resolve_dialog_player() -> void:
 
 func _ensure_dialog_ui() -> void:
     if _dialog_ui != null and is_instance_valid(_dialog_ui):
+        if _dialog_ui.has_signal("finished"):
+            if not _dialog_ui.finished.is_connected(Callable(self, "_on_dialog_finished_for_auto_travel")):
+                _dialog_ui.finished.connect(_on_dialog_finished_for_auto_travel)
         return
 
     # DialogPlayer 経由で探す（dialog_player は既存の export ）
@@ -1552,6 +1569,9 @@ func _ensure_dialog_ui() -> void:
         var d = dialog_player.get("dialog_ui")
         if d is Node:
             _dialog_ui = d
+            if _dialog_ui.has_signal("finished"):
+                if not _dialog_ui.finished.is_connected(Callable(self, "_on_dialog_finished_for_auto_travel")):
+                    _dialog_ui.finished.connect(_on_dialog_finished_for_auto_travel)
             return
 
     # 念のためツリー全体から "Dialog" という名前のノードも探す
@@ -1564,6 +1584,9 @@ func _ensure_dialog_ui() -> void:
     var found := root.find_child("Dialog", true, false)
     if found != null:
         _dialog_ui = found
+    if _dialog_ui and _dialog_ui.has_signal("finished"):
+        if not _dialog_ui.finished.is_connected(Callable(self, "_on_dialog_finished_for_auto_travel")):
+            _dialog_ui.finished.connect(_on_dialog_finished_for_auto_travel)
 
 
 func _ensure_auto_travel_timer() -> void:
@@ -1620,6 +1643,7 @@ func start_auto_travel() -> void:
     _auto_travel_dest_city = String(player.get("dest", ""))
 
     _auto_travel_active = true
+    _auto_travel_waiting_for_event = false
 
     _ensure_auto_travel_timer()
     _ensure_dialog_ui()
@@ -1644,6 +1668,8 @@ func _on_auto_travel_tick() -> void:
     if not _auto_travel_active:
         return
     if world == null:
+        return
+    if _auto_travel_waiting_for_event:
         return
 
     var player := world.player
@@ -1682,6 +1708,7 @@ func _on_auto_travel_tick() -> void:
 
 func _stop_auto_travel(show_arrival: bool) -> void:
     _auto_travel_active = false
+    _auto_travel_waiting_for_event = false
 
     if _auto_travel_timer != null and is_instance_valid(_auto_travel_timer):
         _auto_travel_timer.stop()
