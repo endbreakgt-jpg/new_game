@@ -961,9 +961,11 @@ func _apply_travel_outcome(chosen: Dictionary) -> void:
     var kind := String(chosen.get("kind","none"))
     var val := float(chosen.get("value", 0.0))
     if kind == "days_delta":
-        var arrive := int(player.get("arrival_day", day))
-        arrive = max(day + 1, arrive + int(round(val)))
-        player["arrival_day"] = arrive
+        var delta := int(round(val))
+        if delta != 0:
+            var base_arrive := int(player.get("arrival_day_base", player.get("arrival_day", day)))
+            var arrive := max(day + 1, base_arrive + delta)
+            player["arrival_day"] = arrive
     elif kind == "cargo_loss_pct":
         var ratio: float = clamp(float(val), 0.0, 1.0)
         var cargo: Dictionary = player.get("cargo", {}) as Dictionary
@@ -1074,9 +1076,11 @@ func _roll_travel_event_for_player() -> void:
     if kind == "none":
         return
     if kind == "days_delta":
-        var arrive := int(player.get("arrival_day", day))
-        arrive = max(day + 1, arrive + int(round(val)))
-        player["arrival_day"] = arrive
+        var delta := int(round(val))
+        if delta != 0:
+            var base_arrive := int(player.get("arrival_day_base", player.get("arrival_day", day)))
+            var arrive := max(day + 1, base_arrive + delta)
+            player["arrival_day"] = arrive
         var msg2 := String(chosen.get("flavor_ja", ""))
         if msg2 != "": _world_message(msg2)
     elif kind == "cargo_loss_pct":
@@ -1879,6 +1883,7 @@ func _player_arrive() -> void:
     player["enroute"] = false
     player["city"] = player["dest"]
     player["last_arrival_day"] = day
+    player["arrival_day_base"] = 0
     world_updated.emit()
     contracts_try_auto_deliver_at(String(player.get("city","")))
 
@@ -2142,6 +2147,7 @@ func player_move_via(dest: String, path: Array[String]) -> bool:
     # 出発
     player["dest"] = dest
     player["arrival_day"] = day + days_total
+    player["arrival_day_base"] = int(player["arrival_day"])
     player["enroute"] = true
     world_updated.emit()
     return true
