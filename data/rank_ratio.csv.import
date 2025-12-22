@@ -1,0 +1,17 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://2d1jcjadinia"
+
+[deps]
+
+files=["res://data/rank_ratio.cons.translation", "res://data/rank_ratio.prod.translation", "res://data/rank_ratio.safety.translation"]
+
+source_file="res://data/rank_ratio.csv"
+dest_files=["res://data/rank_ratio.cons.translation", "res://data/rank_ratio.prod.translation", "res://data/rank_ratio.safety.translation"]
+
+[params]
+
+compress=true
+delimiter=0

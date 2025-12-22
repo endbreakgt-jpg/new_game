@@ -1,0 +1,17 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://buw1hdfui4e05"
+
+[deps]
+
+files=["res://data/events_travel.weight.translation", "res://data/events_travel.kind.translation", "res://data/events_travel.value.translation", "res://data/events_travel.tier.translation", "res://data/events_travel.layer.translation", "res://data/events_travel.flavor.translation"]
+
+source_file="res://data/events_travel.csv"
+dest_files=["res://data/events_travel.weight.translation", "res://data/events_travel.kind.translation", "res://data/events_travel.value.translation", "res://data/events_travel.tier.translation", "res://data/events_travel.layer.translation", "res://data/events_travel.flavor.translation"]
+
+[params]
+
+compress=true
+delimiter=0

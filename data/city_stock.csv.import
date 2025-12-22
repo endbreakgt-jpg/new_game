@@ -1,0 +1,17 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://bl2k70t2fpwct"
+
+[deps]
+
+files=["res://data/city_stock.product.translation", "res://data/city_stock.stock.translation", "res://data/city_stock.target.translation", "res://data/city_stock.prod.translation", "res://data/city_stock.cons.translation"]
+
+source_file="res://data/city_stock.csv"
+dest_files=["res://data/city_stock.product.translation", "res://data/city_stock.stock.translation", "res://data/city_stock.target.translation", "res://data/city_stock.prod.translation", "res://data/city_stock.cons.translation"]
+
+[params]
+
+compress=true
+delimiter=0

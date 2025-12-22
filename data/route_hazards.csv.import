@@ -1,0 +1,17 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://cl3acqfjlr26"
+
+[deps]
+
+files=["res://data/route_hazards.bandit.translation", "res://data/route_hazards.terrain.translation", "res://data/route_hazards.weather.translation", "res://data/route_hazards.water.translation"]
+
+source_file="res://data/route_hazards.csv"
+dest_files=["res://data/route_hazards.bandit.translation", "res://data/route_hazards.terrain.translation", "res://data/route_hazards.weather.translation", "res://data/route_hazards.water.translation"]
+
+[params]
+
+compress=true
+delimiter=0

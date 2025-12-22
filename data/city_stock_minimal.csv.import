@@ -1,0 +1,17 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://r0jtdj44616a"
+
+[deps]
+
+files=["res://data/city_stock_minimal.product.translation", "res://data/city_stock_minimal.stock.translation", "res://data/city_stock_minimal.target.translation", "res://data/city_stock_minimal.prod.translation"]
+
+source_file="res://data/city_stock_minimal.csv"
+dest_files=["res://data/city_stock_minimal.product.translation", "res://data/city_stock_minimal.stock.translation", "res://data/city_stock_minimal.target.translation", "res://data/city_stock_minimal.prod.translation"]
+
+[params]
+
+compress=true
+delimiter=0

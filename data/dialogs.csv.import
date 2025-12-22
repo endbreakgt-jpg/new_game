@@ -1,0 +1,17 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://olb1ovs5vcis"
+
+[deps]
+
+files=["res://data/dialogs.seq.translation", "res://data/dialogs.speaker.translation", "res://data/dialogs.text.translation", "res://data/dialogs.portrait.translation"]
+
+source_file="res://data/dialogs.csv"
+dest_files=["res://data/dialogs.seq.translation", "res://data/dialogs.speaker.translation", "res://data/dialogs.text.translation", "res://data/dialogs.portrait.translation"]
+
+[params]
+
+compress=true
+delimiter=0

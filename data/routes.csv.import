@@ -1,0 +1,17 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://cneoambtqo7g5"
+
+[deps]
+
+files=["res://data/routes.from.translation", "res://data/routes.to.translation", "res://data/routes.days.translation", "res://data/routes.toll.translation"]
+
+source_file="res://data/routes.csv"
+dest_files=["res://data/routes.from.translation", "res://data/routes.to.translation", "res://data/routes.days.translation", "res://data/routes.toll.translation"]
+
+[params]
+
+compress=true
+delimiter=0

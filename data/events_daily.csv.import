@@ -1,0 +1,17 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://cc2i115k77cg0"
+
+[deps]
+
+files=["res://data/events_daily.weight.translation", "res://data/events_daily.kind.translation", "res://data/events_daily.value.translation", "res://data/events_daily.tier.translation", "res://data/events_daily.flavor.translation"]
+
+source_file="res://data/events_daily.csv"
+dest_files=["res://data/events_daily.weight.translation", "res://data/events_daily.kind.translation", "res://data/events_daily.value.translation", "res://data/events_daily.tier.translation", "res://data/events_daily.flavor.translation"]
+
+[params]
+
+compress=true
+delimiter=0

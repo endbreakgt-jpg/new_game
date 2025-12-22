@@ -1,0 +1,17 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://ci6iio8cserlm"
+
+[deps]
+
+files=["res://data/products.name.translation", "res://data/products.base.translation", "res://data/products.carry.translation", "res://data/products.category.translation", "res://data/products.decay.translation", "res://data/products.decay.translation"]
+
+source_file="res://data/products.csv"
+dest_files=["res://data/products.name.translation", "res://data/products.base.translation", "res://data/products.carry.translation", "res://data/products.category.translation", "res://data/products.decay.translation", "res://data/products.decay.translation"]
+
+[params]
+
+compress=true
+delimiter=0

@@ -1,0 +1,17 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://dtds715c45843"
+
+[deps]
+
+files=["res://data/cities.name.translation", "res://data/cities.province.translation", "res://data/cities.note.translation", "res://data/cities.CityRANK.translation"]
+
+source_file="res://data/cities.csv"
+dest_files=["res://data/cities.name.translation", "res://data/cities.province.translation", "res://data/cities.note.translation", "res://data/cities.CityRANK.translation"]
+
+[params]
+
+compress=true
+delimiter=0

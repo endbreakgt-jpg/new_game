@@ -1,0 +1,17 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://dp8rkcw6vjq8r"
+
+[deps]
+
+files=["res://data/key_items.name.translation", "res://data/key_items.desc.translation", "res://data/key_items.category.translation", "res://data/key_items.unique.translation", "res://data/key_items.max.translation", "res://data/key_items.auto.translation", "res://data/key_items.effect.translation", "res://data/key_items.effect.translation", "res://data/key_items.effect.translation", "res://data/key_items.sort.translation"]
+
+source_file="res://data/key_items.csv"
+dest_files=["res://data/key_items.name.translation", "res://data/key_items.desc.translation", "res://data/key_items.category.translation", "res://data/key_items.unique.translation", "res://data/key_items.max.translation", "res://data/key_items.auto.translation", "res://data/key_items.effect.translation", "res://data/key_items.effect.translation", "res://data/key_items.effect.translation", "res://data/key_items.sort.translation"]
+
+[params]
+
+compress=true
+delimiter=0

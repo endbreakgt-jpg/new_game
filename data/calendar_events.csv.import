@@ -1,0 +1,17 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://2kx8e14ss8qm"
+
+[deps]
+
+files=["res://data/calendar_events.city.translation", "res://data/calendar_events.type.translation", "res://data/calendar_events.start.translation", "res://data/calendar_events.duration.translation", "res://data/calendar_events.fee.translation", "res://data/calendar_events.crowd.translation"]
+
+source_file="res://data/calendar_events.csv"
+dest_files=["res://data/calendar_events.city.translation", "res://data/calendar_events.type.translation", "res://data/calendar_events.start.translation", "res://data/calendar_events.duration.translation", "res://data/calendar_events.fee.translation", "res://data/calendar_events.crowd.translation"]
+
+[params]
+
+compress=true
+delimiter=0
