@@ -166,6 +166,29 @@ func show_lines(lines: Array[String], speaker: String = "") -> void:
     start_dialog()
 
 # Dialog.gd に追加（位置はどこでも良いですが、show_lines の近くが分かりやすいです）
+
+
+func insert_lines(at_index: int, new_lines: Array[String]) -> void:
+    # 進行中のダイアログに「行」を差し込む（DialogPlayer からのシステムメッセージ注入に使用）
+    if new_lines.is_empty():
+        return
+    if text_to_display == null:
+        text_to_display = []
+
+    at_index = clamp(at_index, 0, text_to_display.size())
+
+    # 現在表示中の行より前に差し込む場合、見ている行がズレないように補正
+    if is_dialog_mode and at_index <= current_index:
+        current_index += new_lines.size()
+
+    # insert は 1要素ずつなので逆順で入れると順序が保てる
+    for i in range(new_lines.size() - 1, -1, -1):
+        text_to_display.insert(at_index, String(new_lines[i]))
+
+
+func append_lines(new_lines: Array[String]) -> void:
+    insert_lines(text_to_display.size(), new_lines)
+
 func set_speaker(name: String) -> void:
     if character_name:
         character_name.text = name

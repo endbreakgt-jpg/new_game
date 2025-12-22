@@ -97,6 +97,54 @@ func play_from_seq(id: String, start_seq: int) -> bool:
             break
     return _play_from_index(id, start_index)
 
+
+
+func show_system_message(text: String, speaker: String = "システム") -> void:
+    # トーストを廃して「ダイアログ表示」に統一するための入口。
+    # 既に DialogPlayer が再生中なら、次の行として差し込んで同じ流れで見せる。
+    if dialog_ui == null:
+        _resolve_dialog_ui()
+    if dialog_ui == null:
+        push_warning("DialogPlayer: dialog_ui is not assigned.")
+        return
+
+    _prepare_dialog_ui()
+
+    var t := text.strip_edges()
+    if t == "":
+        return
+
+    # 再生中（Story再生中）の場合：次の行に注入して、ストーリーの進行を壊さない
+    if dialog_ui.is_dialog_mode and not _active_rows.is_empty():
+        var insert_at: int = int((dialog_ui as Dialog).current_index) + 1
+        insert_at = clamp(insert_at, 0, _active_rows.size())
+
+        # 同フレームに複数の system が来ても順序が崩れないよう、既に差し込まれた system の後ろに積む
+        while insert_at < _active_rows.size() and String(_active_rows[insert_at].get("type", "")) == "system":
+            insert_at += 1
+
+        var row: Dictionary = {
+            "seq": -1,
+            "speaker": speaker,
+            "text": t,
+            "portrait": "",
+            "type": "system",
+        }
+
+        _active_rows.insert(insert_at, row)
+
+        if dialog_ui.has_method("insert_lines"):
+            (dialog_ui as Dialog).insert_lines(insert_at, [t])
+        else:
+            # 古い Dialog.gd の場合の保険：末尾に追加（すぐには出ないが、完全に消えるよりマシ）
+            dialog_ui.show_lines([t], speaker)
+
+        return
+
+
+    # それ以外：単発のシステムダイアログとして表示
+    dialog_ui.show_lines([t], speaker)
+
 func _play_from_index(id: String, start_index: int) -> bool:
     if dialog_ui == null:
         _resolve_dialog_ui()
@@ -146,7 +194,11 @@ func _emit_line_started(token: int, index: int) -> void:
         return
     if index < 0 or index >= _active_rows.size():
         return
+
     var row: Dictionary = _active_rows[index]
+    if String(row.get("type", "")) == "system":
+        return
+
     var seq: int = int(row.get("seq", 0))
     line_started.emit(_active_id, seq, row)
 

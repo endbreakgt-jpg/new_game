@@ -1348,13 +1348,26 @@ func _refresh_event_log() -> void:
     _event_text.text = out
 
 func _on_supply_event(cid: String, pid: String, qty: int, mode: String, flavor: String) -> void:
+    # World 側の humanize_ids は既に掛かっている想定だが、念のため二重保険
+    var txt := flavor
+    if world and world.has_method("humanize_ids"):
+        txt = world.humanize_ids(txt)
+
+    # システムメッセージはトースト/AcceptDialog ではなく DialogPlayer に統一
+    if mode == "system":
+        if dialog_player and dialog_player.has_method("show_system_message"):
+            dialog_player.call("show_system_message", txt)
+        else:
+            # フォールバック（念のため）
+            _show_toast(txt)
+        _refresh_event_log()  # イベントログは更新
+        return
+
+    # ここから下は「噂/イベント」系。従来どおり。
     if show_supply_dialog:
         var dlg := AcceptDialog.new()
         dlg.title = "市場の噂"
-        var _txt := flavor
-        if world and world.has_method("humanize_ids"):
-            _txt = world.humanize_ids(flavor)
-        dlg.dialog_text = _txt
+        dlg.dialog_text = txt
         add_child(dlg)
         dlg.popup_centered()
         _sync_pause_state()
@@ -1375,8 +1388,9 @@ func _on_supply_event(cid: String, pid: String, qty: int, mode: String, flavor: 
         )
         dlg.grab_focus()
     else:
-        _show_toast(flavor)
-    _refresh_event_log()  # ★ イベントログを即時更新
+        _show_toast(txt)
+
+    _refresh_event_log()  # イベントログを即時更新
 
 # --- Pause/resume unifier ---
 func _any_supply_dialog_visible() -> bool:

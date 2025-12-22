@@ -1,206 +1,73 @@
-1) 追記：export（eventsの近く）
-@export var events_daily_file: String = "events_daily.csv"   # 日時イベントテーブル（CSV）
-@export var events_travel_file: String = "events_travel.csv" # 道中イベントテーブル（CSV）
+# KEYITEM-GRANT / SYSMSG-UNIFY パッチ（手動差し替え用）
+# ※ world.gd / game_hud.gd は 1000行超のため、差し替え関数のみ記載します。
+# 既存ファイル内の同名関数を「丸ごと置換」してください。
+#
+# 対象:
+# - res://scripts/world.gd
+# - res://ui/game_hud.gd（プロジェクト側の実ファイル名に合わせてください）
+#
+# 目的:
+# - World._world_message の mode を "system" に統一
+# - GameHUD._on_supply_event は mode=="system" のとき DialogPlayer に表示を委譲（トースト廃止）
 
-# --- Key Items (KEYITEM-GRANT) ---
-@export var key_items_file: String = "key_items.csv"        # 大切なもの定義（CSV）
 
-2) 追記：定義辞書
-var traders: Array[Dictionary] = []   # list of traders
+## world.gd: func _world_message
 
-# --- Key Items definitions (key_id -> row Dictionary) ---
-var key_items: Dictionary = {}
-
-3) load_data() に追記（イベントCSV読込の直後）
-# --- イベントテーブル読込（無ければ空配列） ---
-_events_daily = _loader.load_csv_dicts(data_dir + events_daily_file)
-_events_travel = _loader.load_csv_dicts(data_dir + events_travel_file)
-
-# --- 大切なもの（Key Items）定義 ---
-key_items.clear()
-var ki_path := data_dir + key_items_file
-if FileAccess.file_exists(ki_path):
-    var ki_rows: Array[Dictionary] = _loader.load_csv_dicts(ki_path)
-    for ki_any in ki_rows:
-        var ki: Dictionary = ki_any
-        var kid: String = String(ki.get("key_id", ki.get("id", "")))
-        if kid == "":
-            continue
-        key_items[kid] = ki
-
-4) 置き換え：init_player()
-func init_player() -> void:
-    player = {
-        "id": "YOU",
-        "city": "RE0001",
-        "cash": 500.0,
-        "cap": 40,
-        "cargo": {},
-        "key_items": {},
-        "enroute": false,
-        "dest": "",
-        "arrival_day": 0,
-    }
-    player["escort_level"] = int(player.get("escort_level", 0))
-    player["last_arrival_day"] = -999
-
-5) 置き換え：can_player_move_to()（実コスト計算に統一）
-func can_player_move_to(dest: String) -> Dictionary:
-    var a: String = String(player.get("city", ""))
-    if int(player.get("last_arrival_day", -999)) == day:
-        return {"ok": false, "err": MoveErr.ARRIVED_TODAY}
-    if not adj.has(a) or not (dest in (adj[a] as Array)):
-        return {"ok": false, "err": MoveErr.NOT_ADJACENT}
-    var cap_used: int = _cargo_used(player)
-    var breakdown: Dictionary = _calc_edge_travel_cost(a, dest, cap_used)
-    var days: int = int(breakdown.get("days", 1))
-    var total_cost: float = float(breakdown.get("total", 0.0))
-    if float(player.get("cash", 0.0)) < total_cost:
-        return {"ok": false, "err": MoveErr.LACK_CASH, "need": total_cost, "days": days, "breakdown": breakdown}
-    return {"ok": true, "need": total_cost, "days": days, "breakdown": breakdown}
-
-6) 追加：_travel_tax_multiplier_for_city()
-func _travel_tax_multiplier_for_city(city_id: String) -> float:
-    # 大切なもの（key_items.csv）の効果による「通行税・関税」倍率
-    var mult: float = 1.0
-    if player == null:
-        return mult
-    var inv_any: Variant = player.get("key_items", {})
-    if typeof(inv_any) != TYPE_DICTIONARY:
-        return mult
-    var inv: Dictionary = inv_any as Dictionary
-    if inv.is_empty() or key_items.is_empty():
-        return mult
-
-    var province: String = ""
-    if cities.has(city_id):
-        province = String(cities[city_id].get("province", ""))
-
-    for kid_any in inv.keys():
-        var kid: String = String(kid_any)
-        var count: int = int(inv.get(kid, 0))
-        if count <= 0:
-            continue
-        if not key_items.has(kid):
-            continue
-
-        var def: Dictionary = key_items[kid] as Dictionary
-        var effect_type: String = String(def.get("effect_type", "")).to_lower()
-        if effect_type != "travel_tax_mult":
-            continue
-
-        var target: String = String(def.get("effect_target", ""))
-        if target != "" and target != city_id and target != province:
-            continue
-
-        var value: float = float(_num(def.get("effect_value", 1.0)))
-        if value <= 0.0:
-            continue
-
-        for i in range(count):
-            mult *= value
-    return mult
-
-7) 置き換え：_calc_edge_travel_cost()（税に倍率を適用）
-func _calc_edge_travel_cost(u: String, v: String, cap_used: int) -> Dictionary:
-    var days: int = _route_days(u, v)
-    if days <= 0:
-        days = 1
-
-    var rank: int = 5
-    if cities.has(v):
-        rank = int(cities[v].get("rank", 5))
-    var rank_mult: float = _rank_travel_mult(rank)
-
-    var travel: float = travel_cost_per_day * float(days) * rank_mult
-
-    var cap_u: int = max(0, cap_used)
-    var tax: float = travel_tax_per_cap * float(cap_u) * rank_mult
-    var tax_mult: float = _travel_tax_multiplier_for_city(v)
-    tax *= tax_mult
-
-    var toll: float = 0.0
-    if pay_toll_on_depart:
-        toll = float(_route_toll(u, v))
-
-    var total: float = travel + tax + toll
-
-    return {
-        "days": days,
-        "travel": travel,
-        "tax": tax,
-        "toll": toll,
-        "total": total,
-        "rank_mult": rank_mult,
-        "tax_mult": tax_mult,
-    }
-
-8) 置き換え：Key Items API（give_key_item と _apply_key_item_effect）
-func give_key_item(id: String, count: int = 1, show_message: bool = true) -> bool:
-    if id == "":
-        return false
-    if count <= 0:
-        return false
-    if player == null:
-        return false
-
-    if not player.has("key_items") or typeof(player.get("key_items")) != TYPE_DICTIONARY:
-        player["key_items"] = {}
-
-    var inv: Dictionary = player.get("key_items", {}) as Dictionary
-
-    var def: Dictionary = {}
-    if key_items.has(id):
-        def = key_items[id] as Dictionary
-
-    var is_unique: bool = int(def.get("unique", 0)) == 1
-    var max_stack: int = int(def.get("max_stack", 99))
-    if is_unique or max_stack <= 0:
-        max_stack = 1
-
-    var cur: int = int(inv.get(id, 0))
-    if cur >= max_stack:
-        return false
-
-    var add: int = min(count, max_stack - cur)
-    inv[id] = cur + add
-    player["key_items"] = inv
-
-    if show_message:
-        var name_str: String = id
-        if not def.is_empty():
-            name_str = String(def.get("name_ja", def.get("name", id)))
-        var msg: String = ""
-        if add <= 1:
-            msg = "%sを手に入れた！" % name_str
-        else:
-            msg = "%s×%dを手に入れた！" % [name_str, add]
-        _world_message(msg)
-
-    var auto_apply: bool = int(def.get("auto_apply", 0)) == 1
-    if auto_apply:
-        _apply_key_item_effect(def, add)
-
-    world_updated.emit()
-    return true
-
-func _apply_key_item_effect(def: Dictionary, qty_added: int) -> void:
-    if def.is_empty() or player == null:
+func _world_message(txt: String) -> void:
+    if txt == "":
         return
-    var effect_type: String = String(def.get("effect_type", "")).to_lower()
-    var target: String = String(def.get("effect_target", ""))
-    var value_f: float = float(_num(def.get("effect_value", 0.0)))
+    # 受け渡しID（都市名/商品名など）をローカライズしてから通知
+    if has_method("humanize_ids"):
+        txt = humanize_ids(txt)
+    _log(txt)
 
-    match effect_type:
-        "cap_add":
-            var delta: int = int(round(value_f)) * max(1, qty_added)
-            if delta != 0:
-                player["cap"] = int(player.get("cap", 0)) + delta
-                _world_message("積載量が %d 増えた。" % delta)
-        "travel_tax_mult":
-            # パッシブ効果だが、チュートリアル向けに変化を見える化
-            if target != "" and value_f > 0.0:
-                var pct: int = int(round(value_f * 100.0))
-                _world_message("%sでの通行税が %d%% になった。" % [target, pct])
-        _:
-            pass
+    # UI側で「システムメッセージ」として扱えるよう mode を system に統一
+    supply_event.emit("", "", 0, "system", txt)
+
+
+## game_hud.gd: func _on_supply_event
+
+func _on_supply_event(cid: String, pid: String, qty: int, mode: String, flavor: String) -> void:
+    # World 側の humanize_ids は既に掛かっている想定だが、念のため二重保険
+    var txt := flavor
+    if world and world.has_method("humanize_ids"):
+        txt = world.humanize_ids(txt)
+
+    # ★ システムメッセージはトースト/AcceptDialog ではなく DialogPlayer に統一
+    if mode == "system":
+        if dialog_player and dialog_player.has_method("show_system_message"):
+            dialog_player.call("show_system_message", txt)
+        else:
+            # フォールバック（念のため）
+            _show_toast(txt)
+        _refresh_event_log()  # イベントログは更新
+        return
+
+    # ここから下は「噂/イベント」系（従来どおり）
+    if show_supply_dialog:
+        var dlg := AcceptDialog.new()
+        dlg.title = "市場の噂"
+        dlg.dialog_text = txt
+        add_child(dlg)
+        dlg.popup_centered()
+        _sync_pause_state()
+        dlg.confirmed.connect(func():
+            if is_instance_valid(dlg):
+                dlg.hide()
+                dlg.queue_free()
+            call_deferred("_sync_pause_state")
+        )
+        dlg.close_requested.connect(func():
+            if is_instance_valid(dlg):
+                dlg.hide()
+                dlg.queue_free()
+            call_deferred("_sync_pause_state")
+        )
+        dlg.visibility_changed.connect(func():
+            call_deferred("_sync_pause_state")
+        )
+        dlg.grab_focus()
+    else:
+        _show_toast(txt)
+
+    _refresh_event_log()  # ★ イベントログを即時更新

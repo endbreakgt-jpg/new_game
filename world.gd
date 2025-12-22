@@ -1837,12 +1837,16 @@ func _log_day_summary() -> void:
             s += " %s=%.1f" % [String(pid), float(price[c].get(pid, products[pid]["base"]))]
     print(s)
 
-func _world_message(msg: String) -> void:
-    var txt := _humanize_ids_in_text(msg)
-    event_log.append(txt)
-    if event_log.size() > event_log_max: event_log.pop_front()
-    # HUD既存の supply_event 表示を流用（city/pid空）
-    supply_event.emit("", "", 0, "event", txt)
+func _world_message(txt: String) -> void:
+    if txt == "":
+        return
+    # 受け渡しID（都市名/商品名など）をローカライズしてから通知
+    if has_method("humanize_ids"):
+        txt = humanize_ids(txt)
+    _log(txt)
+
+    # UI側で「システムメッセージ」として扱えるよう mode を system に統一
+    supply_event.emit("", "", 0, "system", txt)
 
 func _log(m: String) -> void:
     print(m)

@@ -218,9 +218,15 @@ func _resume_story_after_break() -> void:
         dialog_player.play_from_seq(rid, rseq)
 
 func _show_system_message(text: String) -> void:
+    # システムメッセージ表示は DialogPlayer に統一（トースト/AcceptDialog は使わない）
+    if dialog_player and dialog_player.has_method("show_system_message"):
+        dialog_player.call("show_system_message", text)
+        return
+
+    # フォールバック（dialog_player が未接続のシーンでも表示できるように）
     _resolve_dialog_ui()
     if dialog_ui:
-        dialog_ui.show_lines([text], "System")
+        dialog_ui.show_lines([text], "システム")
 
 func _on_prologue_1_seq_60(row: Dictionary) -> void:
     if world and world.has_method("give_key_item"):
