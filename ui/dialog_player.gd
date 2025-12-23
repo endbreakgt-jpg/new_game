@@ -9,9 +9,14 @@ signal line_started(id: String, seq: int, row: Dictionary)
 var dialog_ui: Dialog
 var rows_by_id: Dictionary = {}
 
-# 現在再生中の行データ（ポートレート切替に使用）
-var _active_rows: Array[Dictionary] = []
+# 現在再生中の行データ
+# - _active_script_rows : CSV上の行（DEV含む）
+# - _active_visible_rows: 表示対象の行（DEV除外 + 途中注入(system)含む）
+var _active_script_rows: Array[Dictionary] = []
+var _active_visible_rows: Array[Dictionary] = []
+var _visible_to_script: Array[int] = [] # visible_index -> script_index（注入行は -1）
 var _active_id: String = ""
+var _current_script_index: int = -1
 var _emit_guard_token: int = 0
 
 func _ready() -> void:
@@ -114,13 +119,13 @@ func show_system_message(text: String, speaker: String = "システム") -> void
     if t == "":
         return
 
-    # 再生中（Story再生中）の場合：次の行に注入して、ストーリーの進行を壊さない
-    if dialog_ui.is_dialog_mode and not _active_rows.is_empty():
+    # 再生中（Story再生中）の場合：次の行として差し込んで、ストーリーの進行を壊さない
+    if dialog_ui.is_dialog_mode and not _active_visible_rows.is_empty():
         var insert_at: int = int((dialog_ui as Dialog).current_index) + 1
-        insert_at = clamp(insert_at, 0, _active_rows.size())
+        insert_at = clamp(insert_at, 0, _active_visible_rows.size())
 
         # 同フレームに複数の system が来ても順序が崩れないよう、既に差し込まれた system の後ろに積む
-        while insert_at < _active_rows.size() and String(_active_rows[insert_at].get("type", "")) == "system":
+        while insert_at < _active_visible_rows.size() and String(_active_visible_rows[insert_at].get("type", "")) == "system":
             insert_at += 1
 
         var row: Dictionary = {
@@ -131,7 +136,8 @@ func show_system_message(text: String, speaker: String = "システム") -> void
             "type": "system",
         }
 
-        _active_rows.insert(insert_at, row)
+        _active_visible_rows.insert(insert_at, row)
+        _visible_to_script.insert(insert_at, -1)
 
         if dialog_ui.has_method("insert_lines"):
             (dialog_ui as Dialog).insert_lines(insert_at, [t])
@@ -163,52 +169,87 @@ func _play_from_index(id: String, start_index: int) -> bool:
     if start_index >= rows.size():
         start_index = max(0, rows.size() - 1)
 
-    # 行データを保持（speaker / portrait / Storyトリガー用）
-    _active_rows.clear()
+    # 行データを保持
+    _active_script_rows.clear()
+    _active_visible_rows.clear()
+    _visible_to_script.clear()
+    _current_script_index = -1
+
+    # script rows（DEV含む）
     for i in range(start_index, rows.size()):
-        _active_rows.append(rows[i] as Dictionary)
+        _active_script_rows.append(rows[i] as Dictionary)
+
+    # visible rows（DEV除外）
+    for si in range(_active_script_rows.size()):
+        var r: Dictionary = _active_script_rows[si]
+        var sp: String = String(r.get("speaker", r.get("char", "")))
+        if sp == "DEV":
+            continue
+        _active_visible_rows.append(r)
+        _visible_to_script.append(si)
+
     _active_id = id
     _emit_guard_token += 1
     var token: int = _emit_guard_token
 
-    # テキストだけまとめて Dialog に渡す
+    if _active_visible_rows.is_empty():
+        # DEV行だけのIDなど
+        push_warning("DialogPlayer: id '%s' has no visible lines." % id)
+        return false
+
+    # テキストだけまとめて Dialog に渡す（DEV行は表示しない）
     var lines: Array[String] = []
-    for r in _active_rows:
+    for r in _active_visible_rows:
         lines.append(str(r.get("text", "")))
 
-    # speaker はここでは空で渡しておき、後から _apply_row(0) で設定する
+    # speaker はここでは空で渡しておき、後から _apply_visible_row(0) で設定する
     dialog_ui.show_lines(lines, "")
 
     # 先頭行の speaker / portrait を反映
-    _apply_row(0)
+    _apply_visible_row(0)
+
+    # 先頭表示行より前にある DEV コマンドを実行（例：ctx_place など）
+    var first_script_index: int = int(_visible_to_script[0])
+    if first_script_index > 0:
+        _emit_pending_dev(0, first_script_index - 1)
+        # break などで止められた場合
+        if dialog_ui != null and not dialog_ui.is_dialog_mode:
+            return true
+
+    _current_script_index = first_script_index
 
     # Story 側が advanced を見てから処理できるよう、line_started は遅延で流す
     call_deferred("_emit_line_started", token, 0)
 
     return true
 
-func _emit_line_started(token: int, index: int) -> void:
+func _emit_line_started(token: int, visible_index: int) -> void:
     if token != _emit_guard_token:
         return
-    if _active_rows.is_empty():
+    if _active_visible_rows.is_empty():
         return
-    if index < 0 or index >= _active_rows.size():
+    if visible_index < 0 or visible_index >= _active_visible_rows.size():
         return
 
-    var row: Dictionary = _active_rows[index]
+    # 注入(system)行はトリガーに使わない
+    var row: Dictionary = _active_visible_rows[visible_index]
     if String(row.get("type", "")) == "system":
+        return
+
+    var si: int = int(_visible_to_script[visible_index])
+    if si < 0:
         return
 
     var seq: int = int(row.get("seq", 0))
     line_started.emit(_active_id, seq, row)
 
-func _apply_row(index: int) -> void:
+func _apply_visible_row(visible_index: int) -> void:
     if dialog_ui == null:
         return
-    if index < 0 or index >= _active_rows.size():
+    if visible_index < 0 or visible_index >= _active_visible_rows.size():
         return
 
-    var r: Dictionary = _active_rows[index]
+    var r: Dictionary = _active_visible_rows[visible_index]
 
     # スピーカー名
     var speaker := str(r.get("speaker", r.get("char", "")))
@@ -224,11 +265,34 @@ func _apply_row(index: int) -> void:
 # ダイアログの進行に合わせて行ごとに画像を切替
 # ダイアログの進行に合わせて行ごとに speaker / 画像を切替
 func _on_dialog_advanced(next_index: int) -> void:
-    if _active_rows.is_empty():
+    if _active_visible_rows.is_empty():
         return
-    if next_index < 0 or next_index >= _active_rows.size():
+    if next_index < 0:
         return
-    _apply_row(next_index)
+
+    # 最終行の次（Dialog.gd が stop_dialog する直前）でも advanced が飛ぶので、
+    # その場合は「残っているDEV行」だけ実行して終える。
+    if next_index >= _active_visible_rows.size():
+        _emit_pending_dev(_current_script_index + 1, _active_script_rows.size() - 1)
+        return
+
+    # 次の表示行が、元スクリプトのどの行か
+    var next_script_index: int = int(_visible_to_script[next_index])
+
+    # 注入(system)行：スクリプト上の位置を持たないので DEV は処理しない
+    if next_script_index < 0:
+        _apply_visible_row(next_index)
+        return
+
+    # 次の表示行までの間にある DEV 行を先に実行する
+    if _current_script_index >= 0 and next_script_index > _current_script_index + 1:
+        _emit_pending_dev(_current_script_index + 1, next_script_index - 1)
+        # break などで会話が止められた場合、次の行へは進めない
+        if dialog_ui != null and not dialog_ui.is_dialog_mode:
+            return
+
+    _current_script_index = next_script_index
+    _apply_visible_row(next_index)
     var token: int = _emit_guard_token
     call_deferred("_emit_line_started", token, next_index)
 
@@ -236,4 +300,42 @@ func _on_dialog_finished() -> void:
     # 途中で stop_dialog された場合も含めて、状態だけ掃除
     _emit_guard_token += 1
     _active_id = ""
-    _active_rows.clear()
+    _active_script_rows.clear()
+    _active_visible_rows.clear()
+    _visible_to_script.clear()
+    _current_script_index = -1
+
+func _emit_pending_dev(from_script_index: int, to_script_index: int) -> void:
+    if _active_script_rows.is_empty():
+        return
+    if from_script_index < 0:
+        from_script_index = 0
+    if to_script_index >= _active_script_rows.size():
+        to_script_index = _active_script_rows.size() - 1
+    if to_script_index < from_script_index:
+        return
+
+    for si in range(from_script_index, to_script_index + 1):
+        var r: Dictionary = _active_script_rows[si]
+        var sp: String = String(r.get("speaker", r.get("char", "")))
+        if sp != "DEV":
+            continue
+        var seq: int = int(r.get("seq", 0))
+        line_started.emit(_active_id, seq, r)
+
+func get_next_non_dev_seq(id: String, after_seq: int) -> int:
+    # DEV行の次に来る「表示される行」の seq を返す。
+    # 見つからない場合は -1。
+    var rows: Array = rows_by_id.get(id, [])
+    if rows.is_empty():
+        return -1
+    for r_any in rows:
+        var r: Dictionary = r_any as Dictionary
+        var s: int = int(r.get("seq", 0))
+        if s <= after_seq:
+            continue
+        var sp: String = String(r.get("speaker", r.get("char", "")))
+        if sp == "DEV":
+            continue
+        return s
+    return -1

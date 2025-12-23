@@ -17,6 +17,13 @@ var _resume_after_break: Dictionary = {} # {"id":String, "seq":int}
 var _last_line_info: Dictionary = {} # {"id":String, "seq":int, "row":Dictionary}
 var _suppress_next_line_started: bool = false
 
+# DEVコンテキスト（表示はしない、メモ用）
+var ctx_place: String = ""
+
+# break の前状態復帰（プロローグ以外でも安全に動くように）
+var _break_prev_running_prologue: bool = false
+var _break_prev_story_id: String = ""
+
 # プロローグ進行状態
 var prologue_done: bool = false
 var prologue_step: int = 0   # 0: 未開始, 1..途中, 4以上: 完了
@@ -141,14 +148,108 @@ func _play_next_prologue() -> void:
         push_warning("Story: ダイアログID '%s' の再生に失敗しました。" % id)
 
 func _on_dialog_line_started(id: String, seq: int, row: Dictionary) -> void:
+    if _suppress_next_line_started:
+        _suppress_next_line_started = false
+        return
+
     _last_line_info = {"id": id, "seq": seq, "row": row}
 
-    # 行が表示されたタイミングで実行したいトリガー（メッセージの挿入位置が安定する）
-    if id == "prologue_1" and seq == 60:
-        _on_prologue_1_seq_60(row)
+    # DEV：画面に出さず、処理だけ
+    var speaker: String = String(row.get("speaker", row.get("char", "")))
+    if speaker == "DEV":
+        _run_dev_command(id, seq, String(row.get("text", "")))
+        return
 
     if _maybe_start_pending_overlay(id, seq):
         return
+
+
+func _run_dev_command(id: String, seq: int, text: String) -> void:
+    var t: String = text.strip_edges()
+    if t == "":
+        return
+
+    var parts: Array[String] = t.split(" ", false)
+    if parts.is_empty():
+        return
+
+    var cmd: String = parts[0].to_lower()
+
+    match cmd:
+        "break":
+            _dev_break(id, seq)
+        "keyitem_grant":
+            if parts.size() < 2:
+                _dev_log("[DEV] keyitem_grant: missing key_id")
+                return
+            var key_id: String = parts[1]
+            var count: int = 1
+            if parts.size() >= 3:
+                count = int(parts[2])
+            _dev_keyitem_grant(key_id, count)
+        "keyitem_remove":
+            if parts.size() < 2:
+                _dev_log("[DEV] keyitem_remove: missing key_id")
+                return
+            var key_id2: String = parts[1]
+            var count2: int = 1
+            if parts.size() >= 3:
+                count2 = int(parts[2])
+            _dev_keyitem_remove(key_id2, count2)
+        "ctx_place":
+            if parts.size() < 2:
+                ctx_place = ""
+            else:
+                ctx_place = parts[1]
+            _dev_log("[DEV] ctx_place=%s" % ctx_place)
+        "note":
+            # メモ。ゲーム状態は変えない。
+            _dev_log("[DEV note] %s" % t.substr(4).strip_edges())
+        _:
+            _dev_log("[DEV] unknown command: %s" % t)
+
+
+func _dev_break(id: String, seq: int) -> void:
+    var resume_seq: int = -1
+    if dialog_player and dialog_player.has_method("get_next_non_dev_seq"):
+        resume_seq = int(dialog_player.call("get_next_non_dev_seq", id, seq))
+    if resume_seq <= 0:
+        resume_seq = seq + 1
+    _queue_break_and_resume(id, resume_seq)
+    _last_line_info.clear()
+
+
+func _dev_keyitem_grant(key_id: String, count: int) -> void:
+    if world == null:
+        _dev_log("[DEV] keyitem_grant: world is null")
+        return
+    if not world.has_method("give_key_item"):
+        _dev_log("[DEV] keyitem_grant: World has no give_key_item")
+        return
+
+    var qty: int = max(1, count)
+    # システムメッセージはCSV側（speaker=システム）で出す。ここでは実データだけ。
+    var ok: bool = bool(world.give_key_item(key_id, qty, false))
+    if not ok:
+        _dev_log("[DEV] keyitem_grant failed: %s" % key_id)
+
+
+func _dev_keyitem_remove(key_id: String, count: int) -> void:
+    if world == null:
+        _dev_log("[DEV] keyitem_remove: world is null")
+        return
+    if not world.has_method("remove_key_item"):
+        _dev_log("[DEV] keyitem_remove: World has no remove_key_item")
+        return
+    var qty: int = max(1, count)
+    world.remove_key_item(key_id, qty)
+
+
+func _dev_log(msg: String) -> void:
+    if world != null and world.has_method("_log"):
+        world.call("_log", msg)
+    else:
+        print(msg)
 
 
 func _on_dialog_finished() -> void:
@@ -204,6 +305,10 @@ func _finish_prologue() -> void:
         world.set_tutorial_state(World.TUT_STATE_TUT1, false, "finish_prologue")
 
 func _queue_break_and_resume(id: String, resume_seq: int) -> void:
+    # break は「会話の一時停止」扱い。
+    # stop_dialog による finished をプロローグ完了と誤認しないよう、一旦フラグを退避して落とす。
+    _break_prev_running_prologue = _running_prologue
+    _break_prev_story_id = _current_story_id
     _resume_after_break = {"id": id, "seq": resume_seq}
     _current_story_id = ""
     _running_prologue = false
@@ -221,8 +326,14 @@ func _resume_story_after_break() -> void:
     var rseq := int(_resume_after_break.get("seq", 0))
     _resume_after_break.clear()
     if dialog_player and rid != "" and rseq > 0:
-        _current_story_id = rid
-        _running_prologue = true
+        # 退避していた状態を復元（プロローグ以外でも壊さない）
+        if _break_prev_story_id != "":
+            _current_story_id = _break_prev_story_id
+        else:
+            _current_story_id = rid
+        _running_prologue = _break_prev_running_prologue
+        _break_prev_story_id = ""
+        _break_prev_running_prologue = false
         dialog_player.play_from_seq(rid, rseq)
 
 func _show_system_message(text: String) -> void:
@@ -235,20 +346,6 @@ func _show_system_message(text: String) -> void:
     _resolve_dialog_ui()
     if dialog_ui:
         dialog_ui.show_lines([text], "システム")
-
-func _on_prologue_1_seq_60(row: Dictionary) -> void:
-    # 父のギルド許可証を授与（メッセージは DialogPlayer で統一して出す）
-    if world and world.has_method("give_key_item"):
-        if world.has_method("has_key_item"):
-            if world.has_key_item("guild_permit_father"):
-                return
-
-        # World 側の _world_message 経由だと「どの行の直後に出るか」がズレやすいので、
-        # ここでは授与メッセージだけ抑制して DialogPlayer に統一。
-        var ok: bool = bool(world.give_key_item("guild_permit_father", 1, false))
-        if ok:
-            _show_system_message("父親のギルド許可証を手に入れた！")
-
 
 func _maybe_start_pending_overlay(id: String, seq: int) -> bool:
     if _pending_system_msg == "":
@@ -273,14 +370,9 @@ func _on_dialog_advanced(next_index: int) -> void:
         return
     if _last_line_info.is_empty():
         return
-    var lid := String(_last_line_info.get("id", ""))
-    var lseq := int(_last_line_info.get("seq", 0))
-
-    # prologue_1,55 の後に一瞬ウィンドウを消して「間」を作る
-    if lid == "prologue_1" and lseq == 55:
-        _queue_break_and_resume(lid, 60)
-        _last_line_info.clear()
-        return
+    # 進行に応じたトリガーが必要ならここに置く。
+    # ただし、会話CSVのDEV行（break/keyitem_.../ctx_placeなど）に寄せて
+    # Story側のseqハードコードは極力避ける。
 
 
 func _after_prologue_1() -> void:

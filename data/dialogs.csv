@@ -12,7 +12,8 @@ prologue_1,50,父親,……ふむ。,res://ui/portraits/father_01.png
 prologue_1,55,父親,分かった。お前に頼もう。ちょっと待っていろ。,res://ui/portraits/father_01.png
 prologue_1,56,DEV,break,
 prologue_1,60,父親,……よし、これを持っていきなさい。,res://ui/portraits/father_01.png
-prologue_1,61,DEV,大切なもの：父親のギルド許可証を入手,
+prologue_1,61,DEV,keyitem_grant guild_permit_father,
+prologue_1,62,システム,大切なもの：父親のギルド許可証を入手！,
 prologue_1,65,マルク,これは……？,res://ui/portraits/hero_01.png
 prologue_1,70,父親,俺の代理で来たって話が通らなかったら、それを持って商業ギルドを訪ねるといい。,res://ui/portraits/father_01.png
 prologue_1,75,父親,Pilton地区のギルドは顔が利く。なんとかしてくれるだろう。,res://ui/portraits/father_01.png
@@ -23,7 +24,7 @@ prologue_1,95,父親,無駄遣いするなよ？,res://ui/portraits/father_01.pn
 prologue_1,100,マルク,大丈夫、大事に使うよ。,res://ui/portraits/hero_01.png
 prologue_1,105,マルク,じゃあ、明日の朝に出発する。,res://ui/portraits/hero_01.png
 prologue_1,110,父親,ああ、頼んだ。気をつけてな。,res://ui/portraits/father_01.png
-prologue_1,111,DEV,MAPを表示→マルクのアイコンがDurtonからPiltonに移動する,
+prologue_1,111,DEV,note MAPを表示→マルクのアイコンがDurtonからPiltonに移動する,
 prologue_5,5,マルク,ふう。,res://ui/portraits/hero_01.png
 prologue_5,10,マルク,父さんのギルド許可証があったから、わりとすんなり入れたな。,res://ui/portraits/hero_01.png
 prologue_5,15,マルク,よし、荷物を届けに行こう。,res://ui/portraits/hero_01.png
@@ -77,7 +78,7 @@ prologue_10,175,マルク,……よし、何とか代役をこなすことが出
 prologue_10,180,マルク,一つの契約だけで、いろんな人と話したな。,res://ui/portraits/hero_01.png
 prologue_10,185,マルク,これが商人の仕事なんだ……。,res://ui/portraits/hero_01.png
 prologue_10,190,マルク,さ、帰ろう。,res://ui/portraits/hero_01.png
-prologue_10,191,DEV,MAPを表示→マルクのアイコンがPiltonからDurtonに移動する,
+prologue_10,191,DEV,note MAPを表示→マルクのアイコンがPiltonからDurtonに移動する,
 prologue_15,5,マルク,ただいま。,res://ui/portraits/hero_01.png
 prologue_15,10,父親,おお、お帰り。大丈夫だったか？,res://ui/portraits/father_01.png
 prologue_15,15,マルク,荷物を届けて代金を回収できた、って意味なら大丈夫だったよ。,res://ui/portraits/hero_01.png
@@ -102,7 +103,8 @@ prologue_15,105,父親,俺もまだ引退するつもりはないが、お前に
 prologue_15,110,マルク,はい！,res://ui/portraits/hero_01.png
 prologue_15,115,父親,じゃあ、俺のギルド許可証を返してくれるか。,res://ui/portraits/father_01.png
 prologue_15,120,マルク,あ、そうだった……。,res://ui/portraits/hero_01.png
-prologue_15,121,DEV,父親のギルド許可証を返却,
+prologue_15,121,DEV,keyitem_remove guild_permit_father,
+prologue_15,122,システム,大切なもの：父親のギルド許可証を返却した。,
 prologue_15,125,父親,商人として働く以上、今後はお前自身の信用を築かなければならん。,res://ui/portraits/father_01.png
 prologue_15,130,マルク,うん。,res://ui/portraits/hero_01.png
 prologue_15,135,父親,また Pilton の商人ギルドを訪ねるといい。,res://ui/portraits/father_01.png
@@ -113,7 +115,7 @@ tuto_intro,2,案内人,まずは市場を開いて相場を見てみましょう
 tuto_intro,3,案内人,準備ができたらマップで隣町へ移動してみてください。,res://ui/portraits/guide.png
 event_fair_city,1,市の知らせ,本日、中央広場で定期市が開催されます！,res://ui/portraits/town_crier.png
 event_fair_city,2,市の知らせ,需要が高まりスプレッドが狭くなります。仕入れの好機かもしれません。,res://ui/portraits/town_crier.png
-tuto_01,5,DEV,場所:Pilton,
+tuto_01,5,DEV,ctx_place Pilton,
 tuto_01,10,受付,おはようございます。,res://ui/portraits/clerk_01.png
 tuto_01,15,受付,マルクさんですね。ギルド長からお話は伺っています。,res://ui/portraits/clerk_01.png
 tuto_01,20,受付,今日からマルクさんには見習い商人として研修を受けてもらいます。,res://ui/portraits/clerk_01.png
@@ -130,12 +132,12 @@ tuto_01,70,受付,商人としての『信用』を築いていきましょう�
 tuto_01,75,受付,とはいえ、信用は一朝一夕には築けません。,res://ui/portraits/clerk_01.png
 tuto_01,80,受付,地道にギルドや町からの『依頼』をこなして、 少しずつ獲得していってくださいね。,res://ui/portraits/clerk_01.png
 tuto_01,85,受付,では早速、研修に移ります。『依頼』からギルドの依頼を受けてみましょう！,res://ui/portraits/clerk_01.png
-tuto_01,90,DEV,メニューパネルから依頼を選択し、新規受注一覧を表示するまで誘導,
+tuto_01,90,DEV,note メニューパネルから依頼を選択し、新規受注一覧を表示するまで誘導,
 tuto_01,95,受付,各都市ではこのように様々な『依頼』が張り出されていますが,res://ui/portraits/clerk_01.png
 tuto_01,100,受付,Piltonではギルドからの特別な依頼を受けることが出来ます。,res://ui/portraits/clerk_01.png
 tuto_01,105,受付,これを受けることで研修が進んでいきますよ。,res://ui/portraits/clerk_01.png
 tuto_01,110,受付,では早速受注してみましょう。,res://ui/portraits/clerk_01.png
-tuto_01,115,DEV,ギルドからの依頼を受注するまで誘導,
+tuto_01,115,DEV,note ギルドからの依頼を受注するまで誘導,
 tuto_01,120,受付,これで受注出来ましたね！,res://ui/portraits/clerk_01.png
 tuto_01,125,受付,受注した依頼は『契約』一覧に記載しておきましたので、後で確認できますよ。,res://ui/portraits/clerk_01.png
 tuto_01,130,受付,依頼を達成すると、Pilton地区での信用が少しだけ上がります。,res://ui/portraits/clerk_01.png
@@ -145,29 +147,29 @@ tuto_01,145,受付,とはいえ、最初の研修ですから、そんなに難�
 tuto_01,150,受付,肩の力を抜いて進めていきましょう。,res://ui/portraits/clerk_01.png
 tuto_01,155,受付,今回の依頼に必要な商品は『小麦』10個になりますね。,res://ui/portraits/clerk_01.png
 tuto_01,160,受付,Piltonの『市場』で依頼品をそろえましょう。,res://ui/portraits/clerk_01.png
-tuto_01,165,DEV,メニューパネルから取引を選択し、市場を表示するまで誘導,
+tuto_01,165,DEV,note メニューパネルから取引を選択し、市場を表示するまで誘導,
 tuto_01,170,受付,では小麦を10個買い付けてください。,res://ui/portraits/clerk_01.png
-tuto_01,175,DEV,市場画面で小麦を購入するまで誘導,
+tuto_01,175,DEV,note 市場画面で小麦を購入するまで誘導,
 tuto_01,180,受付,バッチリです！,res://ui/portraits/clerk_01.png
 tuto_01,185,受付,商品を仕入れるときは『所持金』と『積載量』をちゃんとチェックしてくださいね。,res://ui/portraits/clerk_01.png
 tuto_01,190,受付,小麦の仕入れが終わったら、『移動』の準備をしましょう。,res://ui/portraits/clerk_01.png
-tuto_01,195,DEV,メニューパネルから移動MAP画面に誘導,
+tuto_01,195,DEV,note メニューパネルから移動MAP画面に誘導,
 tuto_01,200,受付,行き先として、依頼の届け先になっている町を選びます。,res://ui/portraits/clerk_01.png
 tuto_01,205,受付,移動前に、『日数』や『移動にかかる費用』、そして『通行税』を確認してください。,res://ui/portraits/clerk_01.png
-tuto_01,210,DEV,移動先都市を選択し、確認ダイアログが出るまで誘導,
+tuto_01,210,DEV,note 移動先都市を選択し、確認ダイアログが出るまで誘導,
 tuto_01,215,受付,隣町までは比較的安全ですが、気をつけてくださいね。,res://ui/portraits/clerk_01.png
 tuto_01,220,受付,それでは、いってらっしゃい！,res://ui/portraits/clerk_01.png
-tuto_01,225,DEV,移動するボタンの選択を誘導,
-tuto_01,230,DEV,場所:Wolkess,
+tuto_01,225,DEV,note 移動するボタンの選択を誘導,
+tuto_01,230,DEV,ctx_place Wolkess,
 tuto_01,235,マルク,初めての町はちょっと緊張するな……。,res://ui/portraits/hero_01.png
 tuto_01,240,マルク,でも慣れていかないとね。,res://ui/portraits/hero_01.png
 tuto_01,245,マルク,さ、依頼主のお店に荷物を届けよう。,res://ui/portraits/hero_01.png
-tuto_01,250,DEV,メニューパネルから依頼を選択し、契約一覧からギルドの依頼の選択→完了するを選択するまで誘導,
+tuto_01,250,DEV,note メニューパネルから依頼を選択し、契約一覧からギルドの依頼の選択→完了するを選択するまで誘導,
 tuto_01,255,マルク,よし。無事完了……,res://ui/portraits/hero_01.png
 tuto_01,260,マルク,だけど、研修依頼はPiltonのギルドに報告しなきゃいけないんだっけ。,res://ui/portraits/hero_01.png
 tuto_01,265,マルク,一息ついたらPiltonに移動しよう。,res://ui/portraits/hero_01.png
-tuto_01,270,DEV,場所:Pilton,
-tuto_01,275,DEV,Pilton到着時に自動で発生,
+tuto_01,270,DEV,ctx_place Pilton,
+tuto_01,275,DEV,note Pilton到着時に自動で発生,
 tuto_01,280,受付,おかえりなさい、マルクさん。,res://ui/portraits/clerk_01.png
 tuto_01,285,受付,初めての依頼、お疲れさまでした。,res://ui/portraits/clerk_01.png
 tuto_01,290,受付,ちゃんと届け先からも報告が届いていますよ。,res://ui/portraits/clerk_01.png
@@ -179,8 +181,8 @@ tuto_01,315,受付,少しずつ顔が知られていくようになっていき�
 tuto_01,320,受付,やがて正式な『ギルド許可証』に手が届くようになりますよ。,res://ui/portraits/clerk_01.png
 tuto_01,325,受付,次の研修もご用意していますので,res://ui/portraits/clerk_01.png
 tuto_01,330,受付,準備が出来たらまたギルドの依頼を受注してくださいね。,res://ui/portraits/clerk_01.png
-tuto_02,5,DEV,場所:Pilton,
-tuto_02,10,DEV,依頼から「ギルドの依頼」を選択すると発生,
+tuto_02,5,DEV,ctx_place Pilton,
+tuto_02,10,DEV,note 依頼から「ギルドの依頼」を選択すると発生,
 tuto_02,15,受付,では、次の研修に進みましょうか。,res://ui/portraits/clerk_01.png
 tuto_02,20,受付,今回も配達の依頼です。,res://ui/portraits/clerk_01.png
 tuto_02,25,受付,Boroughambeという町で特産品の『羊毛』を10個仕入れて、,res://ui/portraits/clerk_01.png
@@ -188,10 +190,10 @@ tuto_02,30,受付,Piltonまで運んでもらいます。,res://ui/portraits/cle
 tuto_02,35,受付,Boroughambeは、Durtonから南に2日ほどの距離にあります。,res://ui/portraits/clerk_01.png
 tuto_02,40,受付,Piltonから向かうと3日かかりますね。,res://ui/portraits/clerk_01.png
 tuto_02,45,受付,地図を見て確認してみましょうか。,res://ui/portraits/clerk_01.png
-tuto_02,50,DEV,移動用マップが自動で開かれる,
+tuto_02,50,DEV,note 移動用マップが自動で開かれる,
 tuto_02,55,受付,Boroughambeの場所はここになります。,res://ui/portraits/clerk_01.png
 tuto_02,60,受付,向かうにはこのルートを通ることになりますが……,res://ui/portraits/clerk_01.png
-tuto_02,65,DEV,それぞれハイライトさせる,
+tuto_02,65,DEV,note それぞれハイライトさせる,
 tuto_02,70,受付,Piltonから伸びている道は街道の整備も進んでいて,res://ui/portraits/clerk_01.png
 tuto_02,75,受付,自警団による治安維持も行き届いているので、比較的安全なんです。,res://ui/portraits/clerk_01.png
 tuto_02,80,受付,だけどPilton地区全土にまで、同じようには手が回っていません。,res://ui/portraits/clerk_01.png
@@ -204,15 +206,15 @@ tuto_02,110,受付,商人の信用に関わる、とっても大事な部分で�
 tuto_02,115,受付,ギルドでは道ごとに、報告事例をもとにしたリスクを記録しているんです。,res://ui/portraits/clerk_01.png
 tuto_02,120,受付,リスクは大きく『事故』と『盗賊』の2種類あります。,res://ui/portraits/clerk_01.png
 tuto_02,125,受付,実際に見てみましょう。,res://ui/portraits/clerk_01.png
-tuto_02,130,DEV,目的地：Boroughambeを選択する。,
-tuto_02,135,DEV,Boroughambeへの移動確認ダイアログを表示させる。,
+tuto_02,130,DEV,note 目的地：Boroughambeを選択する。,
+tuto_02,135,DEV,note Boroughambeへの移動確認ダイアログを表示させる。,
 tuto_02,140,受付,現在この道は『事故リスク』が小、『盗賊リスク』が中ですね。,res://ui/portraits/clerk_01.png
 tuto_02,145,受付,リスクは変動します。,res://ui/portraits/clerk_01.png
 tuto_02,150,受付,雨風が強ければ事故は増えますし,res://ui/portraits/clerk_01.png
 tuto_02,155,受付,盗賊も討伐が進めば減ります。逆に増えることもあります。,res://ui/portraits/clerk_01.png
 tuto_02,160,受付,今回は盗賊リスクが中のようです。,res://ui/portraits/clerk_01.png
 tuto_02,165,受付,ここは安全を買うと思って、『護衛』を雇って対策してみましょう。,res://ui/portraits/clerk_01.png
-tuto_02,170,DEV,移動確認ダイアログにある護衛数を決めるスライダー操作を誘導,
+tuto_02,170,DEV,note 移動確認ダイアログにある護衛数を決めるスライダー操作を誘導,
 tuto_02,175,受付,これで護衛を雇えます。,res://ui/portraits/clerk_01.png
 tuto_02,180,受付,盗賊に遭う確率や、遭ったときの被害が減らせるはずですよ。,res://ui/portraits/clerk_01.png
 tuto_02,185,受付,このようにリスクは減らせますが、ゼロには出来ませんので油断は禁物です。,res://ui/portraits/clerk_01.png
@@ -229,21 +231,21 @@ tuto_02,235,受付,リスク情報は各地の支部でも確認できますの�
 tuto_02,240,受付,帰り道もチェックを忘れないように。,res://ui/portraits/clerk_01.png
 tuto_02,245,受付,では、気を付けていってらっしゃい。,res://ui/portraits/clerk_01.png
 tuto_02,250,受付,ちゃんと帰ってきてくださいね。,res://ui/portraits/clerk_01.png
-tuto_02,255,DEV,移動するボタンの選択を誘導,
-tuto_02,260,DEV,場所:Boroughambe,
+tuto_02,255,DEV,note 移動するボタンの選択を誘導,
+tuto_02,260,DEV,ctx_place Boroughambe,
 tuto_02,265,護衛,無事についたな。それではこれで失礼する,res://ui/portraits/guard_01.png
 tuto_02,270,マルク,はい、ありがとうございました！,res://ui/portraits/hero_01.png
 tuto_02,275,マルク,……よし。じゃあ市場で羊毛を仕入れよう。,res://ui/portraits/hero_01.png
-tuto_02,280,DEV,取引画面では羊毛以外購入できない/羊毛が売れないようロックする。,
-tuto_02,285,DEV,取引画面を開いた際に発生,
+tuto_02,280,DEV,note 取引画面では羊毛以外購入できない/羊毛が売れないようロックする。,
+tuto_02,285,DEV,note 取引画面を開いた際に発生,
 tuto_02,290,マルク,研修中は依頼品以外買うのはやめておこうか……。,res://ui/portraits/hero_01.png
-tuto_02,295,DEV,本チュートリアルの依頼中、世界の在庫状況に関わらず羊毛在庫は10個にする。,
-tuto_02,300,DEV,別都市に移動実行時、羊毛10個所持していない場合に発生,
+tuto_02,295,DEV,note 本チュートリアルの依頼中、世界の在庫状況に関わらず羊毛在庫は10個にする。,
+tuto_02,300,DEV,note 別都市に移動実行時、羊毛10個所持していない場合に発生,
 tuto_02,305,マルク,羊毛が足りてないな。市場へ行こう。,res://ui/portraits/hero_01.png
-tuto_02,310,DEV,羊毛10個所持時、Pilton以外に移動選択時に発生,
+tuto_02,310,DEV,note 羊毛10個所持時、Pilton以外に移動選択時に発生,
 tuto_02,315,マルク,Piltonに羊毛を納品しなきゃね。,res://ui/portraits/hero_01.png
-tuto_02,320,DEV,場所:Pilton,
-tuto_02,325,DEV,Pilton到着時に自動で発生,
+tuto_02,320,DEV,ctx_place Pilton,
+tuto_02,325,DEV,note Pilton到着時に自動で発生,
 tuto_02,330,受付,おかえりなさい、マルクさん。,res://ui/portraits/clerk_01.png
 tuto_02,335,受付,ご無事で何よりです。,res://ui/portraits/clerk_01.png
 tuto_02,340,受付,依頼の羊毛は揃えられましたか？,res://ui/portraits/clerk_01.png
@@ -259,8 +261,8 @@ tuto_02,385,受付,……これはギルド長の口癖ですけどね。,res://
 tuto_02,390,受付,それでは今回もお疲れ様でした。,res://ui/portraits/clerk_01.png
 tuto_02,395,受付,次の研修もご用意していますので,res://ui/portraits/clerk_01.png
 tuto_02,400,受付,準備が出来たらまたギルドの依頼を受注してくださいね。,res://ui/portraits/clerk_01.png
-tuto_03,5,DEV,場所:Pilton,
-tuto_03,10,DEV,依頼から「ギルドの依頼」を選択すると発生,
+tuto_03,5,DEV,ctx_place Pilton,
+tuto_03,10,DEV,note 依頼から「ギルドの依頼」を選択すると発生,
 tuto_03,15,受付,では、次の研修に進みましょう。,res://ui/portraits/clerk_01.png
 tuto_03,20,受付,ここまでで、配達と移動、それからリスクと護衛は体験できました。,res://ui/portraits/clerk_01.png
 tuto_03,25,受付,次は……商人として一番大事なこと。,res://ui/portraits/clerk_01.png
@@ -272,7 +274,7 @@ tuto_03,50,受付,でも経験のないうちは何をどう買えばいいの�
 tuto_03,55,受付,そこで活用していただきたいのが、ギルドが発行している『週報』です。,res://ui/portraits/clerk_01.png
 tuto_03,60,受付,各地の支部が集めた情報をまとめていて、簡易的な相場確認が出来るんです。,res://ui/portraits/clerk_01.png
 tuto_03,65,受付,実際にどんな情報が確認できるのか見てみましょうか。,res://ui/portraits/clerk_01.png
-tuto_03,70,DEV,ここで週報ウィンドウが自動で開く（チュートリアル用に強制表示）,
+tuto_03,70,DEV,note ここで週報ウィンドウが自動で開く（チュートリアル用に強制表示）,
 tuto_03,75,受付,週報には、大きく3つの見出しがあります。,res://ui/portraits/clerk_01.png
 tuto_03,80,受付,『上昇』は値上がりしている品です。手持ちなら売り時、これから買うなら慎重に。,res://ui/portraits/clerk_01.png
 tuto_03,85,受付,『下落』は値下がりしている品。安く買える可能性が高いです。,res://ui/portraits/clerk_01.png

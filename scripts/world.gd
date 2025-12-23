@@ -1287,6 +1287,7 @@ func load_data() -> void:
             if kid == "":
                 continue
             key_items[kid] = ki
+    _log("KeyItems: defs=%d (%s)" % [key_items.size(), ki_path])
 
 func _init_reputation() -> void:
     # 0〜100に正規化
